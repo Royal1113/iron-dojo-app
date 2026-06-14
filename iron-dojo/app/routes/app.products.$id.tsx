@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
-import { useState } from "react";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { useEffect, useState } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
@@ -91,6 +91,27 @@ const PRODUCTS_GATE_QUERY = `#graphql
   }
 `;
 
+const PRODUCT_UPDATE_MUTATION = `#graphql
+  mutation IronDojoProductUpdate($input: ProductInput!) {
+    productUpdate(input: $input) {
+      product {
+        id
+        title
+        tags
+        descriptionHtml
+        seo {
+          title
+          description
+        }
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 type ProductImage = { url: string; altText: string | null };
 type Variant = {
   id: string;
@@ -143,10 +164,130 @@ const FIX_LABELS: Record<string, string> = {
   "SEO meta description is missing": "Add SEO meta description",
 };
 
+function mergeAndNormalizeTags(
+  existingTags: string[],
+  aiTags: string[],
+): string[] {
+  const normalize = (t: string): string =>
+    t
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const tag of existingTags) {
+    const norm = normalize(tag);
+    if (norm && !seen.has(norm)) {
+      seen.add(norm);
+      result.push(tag);
+    }
+  }
+
+  const slotsRemaining = Math.max(0, 10 - result.length);
+  let added = 0;
+  for (const tag of aiTags) {
+    if (added >= slotsRemaining) break;
+    const norm = normalize(tag);
+    if (norm && !seen.has(norm)) {
+      seen.add(norm);
+      result.push(tag);
+      added++;
+    }
+  }
+
+  return result;
+}
+
 export const action = async ({ request }: ActionFunctionArgs) => {
-  await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
   const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  // --- Apply Recommendations ---
+  if (intent === "applyRecommendations") {
+    const productId = formData.get("productId");
+    const selectedFieldsRaw = formData.get("selectedFields");
+    const valuesRaw = formData.get("valuesJson");
+    const existingTagsRaw = formData.get("existingTagsJson");
+
+    if (
+      typeof productId !== "string" ||
+      !productId ||
+      typeof selectedFieldsRaw !== "string" ||
+      typeof valuesRaw !== "string" ||
+      typeof existingTagsRaw !== "string"
+    ) {
+      return { applyError: "Missing data for update." };
+    }
+
+    let selectedFields: string[];
+    let aiValues: AiSuggestionResult;
+    let existingTags: string[];
+    try {
+      selectedFields = JSON.parse(selectedFieldsRaw) as string[];
+      aiValues = JSON.parse(valuesRaw) as AiSuggestionResult;
+      existingTags = JSON.parse(existingTagsRaw) as string[];
+    } catch {
+      return { applyError: "Invalid update data." };
+    }
+
+    if (!selectedFields.length) {
+      return { applyError: "No fields selected." };
+    }
+
+    try {
+      const input: Record<string, unknown> = { id: productId };
+
+      if (selectedFields.includes("title")) input.title = aiValues.title;
+      if (selectedFields.includes("description"))
+        input.bodyHtml = aiValues.description;
+
+      if (
+        selectedFields.includes("seoTitle") ||
+        selectedFields.includes("metaDescription")
+      ) {
+        const seo: Record<string, string> = {};
+        if (selectedFields.includes("seoTitle")) seo.title = aiValues.seoTitle;
+        if (selectedFields.includes("metaDescription"))
+          seo.description = aiValues.metaDescription;
+        input.seo = seo;
+      }
+
+      if (selectedFields.includes("tags")) {
+        input.tags = mergeAndNormalizeTags(existingTags, aiValues.tags);
+      }
+
+      const response = await admin.graphql(PRODUCT_UPDATE_MUTATION, {
+        variables: { input },
+      });
+      const json = await response.json();
+      const userErrors: { field: string[]; message: string }[] =
+        json.data?.productUpdate?.userErrors ?? [];
+
+      if (userErrors.length > 0) {
+        return { applyError: userErrors.map((e) => e.message).join(" ") };
+      }
+
+      console.log("[IronDojo] productUpdate", {
+        id: productId,
+        updatedFields: selectedFields,
+        resultId: json.data?.productUpdate?.product?.id,
+      });
+
+      return { applySuccess: true as const };
+    } catch (err) {
+      console.error("[IronDojo] productUpdate error:", err);
+      return { applyError: "Failed to update product. Please try again." };
+    }
+  }
+
+  // --- Generate AI Recommendations ---
   const promptJson = formData.get("promptJson");
 
   if (typeof promptJson !== "string" || !promptJson) {
@@ -415,9 +556,20 @@ export default function ProductDetail() {
   const aiError = aiFetcher.data?.error ?? null;
   const aiLoading = aiFetcher.state === "submitting";
 
+  const applyFetcher = useFetcher<{ applySuccess?: boolean; applyError?: string }>();
+  const revalidator = useRevalidator();
+
   const [aiSelected, setAiSelected] = useState<Set<string>>(new Set());
-  type AiStep = "idle" | "confirming" | "done";
+  type AiStep = "idle" | "confirming";
   const [aiStep, setAiStep] = useState<AiStep>("idle");
+
+  useEffect(() => {
+    if (applyFetcher.data?.applySuccess) {
+      setAiSelected(new Set());
+      setAiStep("idle");
+      revalidator.revalidate();
+    }
+  }, [applyFetcher.data]);
 
   const toggleAiRec = (key: string) => {
     setAiSelected((prev) => {
@@ -696,22 +848,45 @@ export default function ProductDetail() {
                   <s-banner tone="warning">
                     <s-paragraph>
                       You are about to update this product in Shopify. Only
-                      selected fields will be changed. This simulation does not
-                      modify Shopify yet.
+                      selected fields will be changed. This cannot be undone
+                      automatically.
+                      {aiSelected.has("tags")
+                        ? " Selecting Tags will merge AI tags with your existing tag list."
+                        : ""}
                     </s-paragraph>
                   </s-banner>
-                  <button type="button" onClick={() => setAiStep("done")}>
-                    Confirm Simulation
+                  <button
+                    type="button"
+                    disabled={applyFetcher.state === "submitting"}
+                    onClick={() => {
+                      applyFetcher.submit(
+                        {
+                          intent: "applyRecommendations",
+                          productId: product.id,
+                          selectedFields: JSON.stringify([...aiSelected]),
+                          valuesJson: JSON.stringify(aiResult),
+                          existingTagsJson: JSON.stringify(product.tags),
+                        },
+                        { method: "post" },
+                      );
+                    }}
+                  >
+                    {applyFetcher.state === "submitting"
+                      ? "Applying…"
+                      : "Apply to Shopify"}
                   </button>
                 </s-stack>
               )}
 
-              {aiStep === "done" && (
+              {applyFetcher.data?.applyError && (
+                <s-banner tone="critical">
+                  <s-paragraph>{applyFetcher.data.applyError}</s-paragraph>
+                </s-banner>
+              )}
+
+              {applyFetcher.data?.applySuccess && (
                 <s-banner tone="success">
-                  <s-paragraph>
-                    Simulation complete. Selected AI recommendations are ready
-                    to apply in a future write-enabled version.
-                  </s-paragraph>
+                  <s-paragraph>Product updated successfully.</s-paragraph>
                 </s-banner>
               )}
             </s-stack>
