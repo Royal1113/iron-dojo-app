@@ -67,6 +67,82 @@ type ProductDetail = {
   seo: { title: string | null; description: string | null } | null;
 };
 
+type CheckResult = { label: string; passed: boolean };
+
+type ProductScores = {
+  listingQuality: number;
+  productHealth: number;
+  revenueOpportunity: number;
+  checks: CheckResult[];
+};
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function scoreProduct(product: ProductDetail, imageCount: number): ProductScores {
+  const checks: CheckResult[] = [
+    {
+      label: "Status is not Active",
+      passed: product.status === "ACTIVE",
+    },
+    {
+      label: "Inventory is zero or missing",
+      passed: (product.totalInventory ?? 0) > 0,
+    },
+    {
+      label: "Product type is missing",
+      passed: product.productType.trim().length > 0,
+    },
+    {
+      label: "Vendor is missing",
+      passed: product.vendor.trim().length > 0,
+    },
+    {
+      label: "Title is shorter than 20 characters",
+      passed: product.title.trim().length >= 20,
+    },
+    {
+      label: "Description is missing or under 100 characters",
+      passed: stripHtml(product.descriptionHtml).length >= 100,
+    },
+    {
+      label: "Fewer than 5 tags",
+      passed: product.tags.length >= 5,
+    },
+    {
+      label: "Fewer than 3 images",
+      passed: imageCount >= 3,
+    },
+    {
+      label: "No variant price found",
+      passed:
+        parseFloat(product.variants.edges[0]?.node.price ?? "0") > 0,
+    },
+    {
+      label: "SEO title is missing",
+      passed: (product.seo?.title ?? "").trim().length > 0,
+    },
+    {
+      label: "SEO meta description is missing",
+      passed: (product.seo?.description ?? "").trim().length > 0,
+    },
+  ];
+
+  const weights = [15, 10, 5, 5, 10, 15, 10, 10, 5, 8, 7];
+  const listingQuality = checks.reduce(
+    (sum, check, i) => sum + (check.passed ? weights[i] : 0),
+    0,
+  );
+
+  return {
+    listingQuality,
+    productHealth: listingQuality,
+    revenueOpportunity: 100 - listingQuality,
+    checks,
+  };
+}
+
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
 
@@ -82,7 +158,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     throw new Response("Product not found", { status: 404 });
   }
 
-  return { product };
+  const imageCount = product.images.edges.length;
+  const scores = scoreProduct(product, imageCount);
+
+  return { product, scores };
 };
 
 function statusTone(
@@ -104,12 +183,31 @@ function capitalize(str: string) {
   return str.charAt(0) + str.slice(1).toLowerCase();
 }
 
+function scoreTone(score: number): "success" | "caution" | "critical" {
+  if (score >= 80) return "success";
+  if (score >= 50) return "caution";
+  return "critical";
+}
+
+function revOpportunityTone(score: number): "success" | "caution" | "critical" {
+  if (score >= 80) return "critical";
+  if (score >= 50) return "caution";
+  return "success";
+}
+
+function revOpportunityLabel(score: number): string {
+  if (score >= 80) return "High opportunity";
+  if (score >= 50) return "Moderate opportunity";
+  return "Low opportunity";
+}
+
 export default function ProductDetail() {
-  const { product } = useLoaderData<typeof loader>();
+  const { product, scores } = useLoaderData<typeof loader>();
 
   const variants = product.variants.edges.map((e) => e.node);
   const images = product.images.edges.map((e) => e.node);
   const hasSeo = product.seo?.title || product.seo?.description;
+  const failedChecks = scores.checks.filter((c) => !c.passed);
 
   return (
     <s-page heading={product.title}>
@@ -241,6 +339,41 @@ export default function ProductDetail() {
           </s-stack>
         </s-section>
       ) : null}
+
+      {/* Scores in aside */}
+      <s-section slot="aside" heading="Iron Dojo Scores">
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="base">
+            <s-text>Product Health</s-text>
+            <s-badge tone={scoreTone(scores.productHealth)}>
+              {scores.productHealth}/100
+            </s-badge>
+          </s-stack>
+          <s-stack direction="inline" gap="base">
+            <s-text>Listing Quality</s-text>
+            <s-badge tone={scoreTone(scores.listingQuality)}>
+              {scores.listingQuality}/100
+            </s-badge>
+          </s-stack>
+          <s-stack direction="inline" gap="base">
+            <s-text>Revenue Opportunity</s-text>
+            <s-badge tone={revOpportunityTone(scores.revenueOpportunity)}>
+              {scores.revenueOpportunity}/100
+            </s-badge>
+          </s-stack>
+          <s-text>{revOpportunityLabel(scores.revenueOpportunity)}</s-text>
+        </s-stack>
+        {failedChecks.length > 0 ? (
+          <s-stack direction="block" gap="small-200">
+            <s-text>Recommended fixes</s-text>
+            {failedChecks.map((check) => (
+              <s-text key={check.label}>✗ {check.label}</s-text>
+            ))}
+          </s-stack>
+        ) : (
+          <s-text>✓ All checks passed</s-text>
+        )}
+      </s-section>
 
       {/* Featured image in aside */}
       {product.featuredImage ? (
