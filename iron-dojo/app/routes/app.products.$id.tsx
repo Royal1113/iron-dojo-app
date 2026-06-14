@@ -1,5 +1,5 @@
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -259,6 +259,92 @@ const FIX_LABELS: Record<string, string> = {
   "SEO meta description is missing": "Add SEO meta description",
 };
 
+export const action = async ({ request }: ActionFunctionArgs) => {
+  await authenticate.admin(request);
+
+  const formData = await request.formData();
+  const promptJson = formData.get("promptJson");
+
+  if (typeof promptJson !== "string" || !promptJson) {
+    return { error: "Missing prompt data." };
+  }
+
+  let promptData: AiPromptData;
+  try {
+    promptData = JSON.parse(promptJson) as AiPromptData;
+  } catch {
+    return { error: "Invalid prompt data." };
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return { error: "AI not configured." };
+  }
+
+  try {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const client = new Anthropic({ apiKey });
+
+    const promptText = [
+      `Title: ${promptData.title}`,
+      `Vendor: ${promptData.vendor}`,
+      `Product Type: ${promptData.productType}`,
+      `Current Tags: ${promptData.tags.join(", ") || "(none)"}`,
+      `Current Description: ${promptData.description || "(none)"}`,
+      `Current SEO Title: ${promptData.seoTitle || "(none)"}`,
+      `Current SEO Description: ${promptData.seoDescription || "(none)"}`,
+      "",
+      "Return a JSON object with exactly these keys:",
+      '{ "title": "<compelling title, max 80 chars>", "seoTitle": "<SEO title, max 60 chars>", "metaDescription": "<meta description, max 160 chars>", "tags": ["<kebab-case tag>"], "description": "<2-3 sentence product description>" }',
+    ].join("\n");
+
+    const message = await client.messages.create({
+      model: "claude-3-5-haiku-20241022",
+      max_tokens: 8192,
+      system:
+        "You are a Shopify product listing optimizer. Return only valid JSON — no markdown fences, no explanation, no extra keys.",
+      messages: [{ role: "user", content: promptText }],
+    });
+
+    const rawText =
+      message.content[0]?.type === "text" ? message.content[0].text : "";
+    const cleaned = rawText
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "")
+      .trim();
+
+    const parsed: unknown = JSON.parse(cleaned);
+
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      typeof (parsed as Record<string, unknown>).title !== "string" ||
+      typeof (parsed as Record<string, unknown>).seoTitle !== "string" ||
+      typeof (parsed as Record<string, unknown>).metaDescription !== "string" ||
+      !Array.isArray((parsed as Record<string, unknown>).tags) ||
+      typeof (parsed as Record<string, unknown>).description !== "string"
+    ) {
+      return { error: "AI response was incomplete. Please try again." };
+    }
+
+    const p = parsed as Record<string, unknown>;
+    const result: AiSuggestionResult = {
+      title: p.title as string,
+      seoTitle: p.seoTitle as string,
+      metaDescription: p.metaDescription as string,
+      tags: (p.tags as unknown[]).filter(
+        (t): t is string => typeof t === "string",
+      ),
+      description: p.description as string,
+    };
+
+    return { result };
+  } catch (err) {
+    console.error("Anthropic AI error:", err);
+    return { error: "AI service unavailable. Please try again." };
+  }
+};
+
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
 
@@ -431,41 +517,6 @@ export interface AiSuggestionResult {
   description: string;
 }
 
-async function generateAiSuggestions(
-  promptData: AiPromptData,
-): Promise<AiSuggestionResult> {
-  const { title, vendor, productType, tags } = promptData;
-  const typeLabel = productType || "product";
-  const vendorLabel = vendor || "our store";
-
-  const rawTitle = `${title} — ${typeLabel} by ${vendorLabel}`;
-  const suggestedTitle =
-    rawTitle.length > 80 ? rawTitle.slice(0, 77) + "…" : rawTitle;
-
-  const rawSeo = `Buy ${title} | ${vendorLabel}`;
-  const seoTitle = rawSeo.length > 60 ? rawSeo.slice(0, 57) + "…" : rawSeo;
-
-  const rawMeta = `Shop the ${title} from ${vendorLabel}. Perfect for ${typeLabel} enthusiasts. Available now.`;
-  const metaDescription =
-    rawMeta.length > 160 ? rawMeta.slice(0, 157) + "…" : rawMeta;
-
-  const existing = tags.map(toSlug).filter(Boolean);
-  const extras = [toSlug(vendor), toSlug(typeLabel)].filter(
-    (t) => t && !existing.includes(t),
-  );
-  const suggestedTags = [...new Set([...existing, ...extras])];
-
-  const description = `Introducing the ${title} from ${vendorLabel}. Whether you're shopping for yourself or someone special, the ${title} is the perfect ${typeLabel} choice. Available now at ${vendorLabel}.`;
-
-  return {
-    title: suggestedTitle,
-    seoTitle,
-    metaDescription,
-    tags: suggestedTags,
-    description,
-  };
-}
-
 export default function ProductDetail() {
   const data = useLoaderData<typeof loader>();
 
@@ -569,8 +620,10 @@ export default function ProductDetail() {
     })
     .filter((fix): fix is NonNullable<typeof fix> => fix !== null);
 
-  const [aiStep, setAiStep] = useState<"idle" | "loading" | "done">("idle");
-  const [aiResult, setAiResult] = useState<AiSuggestionResult | null>(null);
+  const aiFetcher = useFetcher<{ result?: AiSuggestionResult; error?: string }>();
+  const aiResult = aiFetcher.data?.result ?? null;
+  const aiError = aiFetcher.data?.error ?? null;
+  const aiLoading = aiFetcher.state === "submitting";
 
   return (
     <s-page heading={product.title}>
@@ -812,24 +865,29 @@ export default function ProductDetail() {
         <s-stack direction="block" gap="base">
           <button
             type="button"
-            disabled={aiStep === "loading"}
+            disabled={aiLoading}
             onClick={() => {
-              setAiStep("loading");
-              generateAiSuggestions(buildAiPrompt(product)).then((result) => {
-                setAiResult(result);
-                setAiStep("done");
-              });
+              aiFetcher.submit(
+                { promptJson: JSON.stringify(buildAiPrompt(product)) },
+                { method: "post" },
+              );
             }}
           >
-            {aiStep === "loading" ? "Generating…" : "Generate AI Suggestions"}
+            {aiLoading ? "Generating…" : "Generate AI Suggestions"}
           </button>
 
-          {aiStep === "done" && aiResult && (
+          {aiError && (
+            <s-banner tone="critical">
+              <s-paragraph>{aiError}</s-paragraph>
+            </s-banner>
+          )}
+
+          {aiResult && (
             <s-stack direction="block" gap="base">
               <s-banner tone="info">
                 <s-paragraph>
-                  Sandbox only. These suggestions are mocked and no AI call has
-                  been made.
+                  Suggestions generated by Claude AI. No changes have been made
+                  to your Shopify product.
                 </s-paragraph>
               </s-banner>
 
