@@ -211,14 +211,48 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     const p = parsed as Record<string, unknown>;
+
+    const rawTags = (p.tags as unknown[]).filter(
+      (t): t is string => typeof t === "string",
+    );
+    const seen = new Set<string>();
+    const cleanedTags = rawTags
+      .map((t) =>
+        t
+          .toLowerCase()
+          .trim()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-z0-9-]/g, "")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, ""),
+      )
+      .filter((t) => {
+        if (!t || seen.has(t)) return false;
+        seen.add(t);
+        return true;
+      })
+      .slice(0, 10);
+
+    const title = p.title as string;
+    const seoTitle = p.seoTitle as string;
+    const metaDescription = p.metaDescription as string;
+    const description = p.description as string;
+
+    if (
+      !title || title.length > 80 ||
+      !seoTitle || seoTitle.length > 60 ||
+      !metaDescription || metaDescription.length > 160 ||
+      !description || description.length < 100 || description.length > 1000
+    ) {
+      return { error: "AI recommendation rejected by quality gate." };
+    }
+
     const result: AiSuggestionResult = {
-      title: p.title as string,
-      seoTitle: p.seoTitle as string,
-      metaDescription: p.metaDescription as string,
-      tags: (p.tags as unknown[]).filter(
-        (t): t is string => typeof t === "string",
-      ),
-      description: p.description as string,
+      title,
+      seoTitle,
+      metaDescription,
+      tags: cleanedTags,
+      description,
     };
 
     return { result };
