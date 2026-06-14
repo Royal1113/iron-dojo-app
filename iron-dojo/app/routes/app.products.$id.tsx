@@ -126,6 +126,73 @@ type GateProduct = {
   seo: { title: string | null; description: string | null } | null;
 };
 
+type GeneratedFix = { label: string; suggestion: string };
+
+function generateFixes(
+  product: ProductDetail,
+  failedChecks: { label: string }[],
+): GeneratedFix[] {
+  const failed = new Set(failedChecks.map((c) => c.label));
+  const fixes: GeneratedFix[] = [];
+
+  const title = product.title.trim();
+  const vendor = product.vendor.trim();
+  const type = product.productType.trim();
+
+  if (failed.has("Title is shorter than 20 characters")) {
+    let suggestion: string;
+    if (vendor && type) suggestion = `${vendor} ${type} — ${title}`;
+    else if (vendor) suggestion = `${vendor} — ${title}`;
+    else if (type) suggestion = `${type} — ${title}`;
+    else suggestion = `${title} — Premium Quality`;
+    fixes.push({ label: "Suggested Product Title", suggestion });
+  }
+
+  if (failed.has("SEO title is missing")) {
+    const suggestion = vendor
+      ? `${title} | ${vendor}`
+      : `${title} | Shop Now`;
+    fixes.push({ label: "Suggested SEO Title", suggestion });
+  }
+
+  if (failed.has("SEO meta description is missing")) {
+    const v = vendor || "our store";
+    const t = type || "product";
+    fixes.push({
+      label: "Suggested Meta Description",
+      suggestion: `Shop ${title} from ${v}. A quality ${t} available now.`,
+    });
+  }
+
+  if (failed.has("Fewer than 5 tags")) {
+    const words = [title, vendor, type]
+      .join(" ")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 2);
+    const existing = product.tags.map((t) => t.toLowerCase());
+    const combined = [...new Set([...existing, ...words])].slice(0, 7);
+    fixes.push({
+      label: "Suggested Tags",
+      suggestion: combined.join(", "),
+    });
+  }
+
+  if (failed.has("Description is missing or under 100 characters")) {
+    const v = vendor || "our brand";
+    const t = type || "product";
+    fixes.push({
+      label: "Suggested Product Description",
+      suggestion:
+        `${title} by ${v} is a quality ${t}. ` +
+        `Built for reliability and craftsmanship, this ${t} is available now. ` +
+        `Shop the full range from ${v}.`,
+    });
+  }
+
+  return fixes;
+}
+
 const FIX_LABELS: Record<string, string> = {
   "Status is not Active": "Set product status to Active",
   "Inventory is zero or missing": "Add inventory",
@@ -249,6 +316,7 @@ export default function ProductDetail() {
     scores.listingQuality + pointsRecoverable,
     100,
   );
+  const generatedFixes = generateFixes(product, failedChecks);
 
   return (
     <s-page heading={product.title}>
@@ -414,6 +482,26 @@ export default function ProductDetail() {
           <s-text>All checks passed — no fixes needed.</s-text>
         </s-section>
       )}
+
+      {/* Generated Fixes */}
+      <s-section heading="Generated Fixes">
+        {generatedFixes.length > 0 ? (
+          <s-stack direction="block" gap="base">
+            {generatedFixes.map((fix) => (
+              <s-stack key={fix.label} direction="block" gap="small-200">
+                <s-text>{fix.label}</s-text>
+                <s-text>{fix.suggestion}</s-text>
+              </s-stack>
+            ))}
+            <s-text>
+              Preview suggestions only. No changes are made to Shopify until
+              approved.
+            </s-text>
+          </s-stack>
+        ) : (
+          <s-text>No generated fixes needed.</s-text>
+        )}
+      </s-section>
 
       {/* Scores in aside */}
       <s-section slot="aside" heading="Iron Dojo Scores">
