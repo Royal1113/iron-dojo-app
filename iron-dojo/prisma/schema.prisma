@@ -32,3 +32,13 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model ProductBatch {
+  id         String   @id @default(cuid())
+  shop       String
+  plan       String
+  productIds String
+  createdAt  DateTime @default(now())
+
+  @@unique([shop, plan])
+}

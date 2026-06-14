@@ -12,6 +12,9 @@ import {
   PLAN_LIMITS,
   CURRENT_PLAN,
 } from "../lib/scoring";
+import prisma from "../db.server";
+
+const COMPLETION_THRESHOLD = 80;
 
 const PRODUCT_DETAIL_QUERY = `#graphql
   query IronDojoProductDetail($id: ID!) {
@@ -54,42 +57,6 @@ const PRODUCT_DETAIL_QUERY = `#graphql
   }
 `;
 
-const PRODUCTS_GATE_QUERY = `#graphql
-  query IronDojoProductsGate {
-    products(first: 50) {
-      edges {
-        node {
-          id
-          status
-          totalInventory
-          productType
-          vendor
-          title
-          descriptionHtml
-          tags
-          images(first: 3) {
-            edges {
-              node {
-                url
-              }
-            }
-          }
-          variants(first: 1) {
-            edges {
-              node {
-                price
-              }
-            }
-          }
-          seo {
-            title
-            description
-          }
-        }
-      }
-    }
-  }
-`;
 
 const PRODUCT_UPDATE_MUTATION = `#graphql
   mutation IronDojoProductUpdate($input: ProductInput!) {
@@ -134,21 +101,6 @@ type ProductDetail = {
   variants: { edges: { node: Variant }[] };
   seo: { title: string | null; description: string | null } | null;
 };
-
-type GateProduct = {
-  id: string;
-  status: string;
-  totalInventory: number | null;
-  productType: string;
-  vendor: string;
-  title: string;
-  descriptionHtml: string;
-  tags: string[];
-  images: { edges: unknown[] };
-  variants: { edges: { node: { price: string } }[] };
-  seo: { title: string | null; description: string | null } | null;
-};
-
 
 const FIX_LABELS: Record<string, string> = {
   "Status is not Active": "Set product status to Active",
@@ -408,55 +360,49 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-
+  const { admin, session } = await authenticate.admin(request);
+  const shop = session.shop;
   const rawId = `gid://shopify/Product/${params.id ?? ""}`;
+  const plan = CURRENT_PLAN;
+  const limit = PLAN_LIMITS[plan];
 
-  const [detailResponse, gateResponse] = await Promise.all([
-    admin.graphql(PRODUCT_DETAIL_QUERY, { variables: { id: rawId } }),
-    admin.graphql(PRODUCTS_GATE_QUERY),
-  ]);
-  const [detailJson, gateJson] = await Promise.all([
-    detailResponse.json(),
-    gateResponse.json(),
-  ]);
+  const batch = await prisma.productBatch.findUnique({
+    where: { shop_plan: { shop, plan } },
+  });
 
+  const assignedIds: string[] = batch ? JSON.parse(batch.productIds) : [];
+
+  if (!assignedIds.includes(rawId)) {
+    return {
+      locked: true as const,
+      plan,
+      limit,
+      product: null,
+      scores: null,
+      isComplete: false,
+    };
+  }
+
+  const detailResponse = await admin.graphql(PRODUCT_DETAIL_QUERY, {
+    variables: { id: rawId },
+  });
+  const detailJson = await detailResponse.json();
   const product: ProductDetail | null = detailJson.data?.product ?? null;
 
   if (!product) {
     throw new Response("Product not found", { status: 404 });
   }
 
-  const limit = PLAN_LIMITS[CURRENT_PLAN];
-  const allGate: GateProduct[] = (
-    gateJson.data?.products?.edges ?? []
-  ).map((e: { node: GateProduct }) => e.node);
-
-  const visibleIds = new Set(
-    allGate
-      .map((p) => ({ id: p.id, lq: scoreProduct(p).listingQuality }))
-      .sort((a, b) => a.lq - b.lq)
-      .slice(0, Number.isFinite(limit) ? limit : undefined)
-      .map((p) => p.id),
-  );
-
-  if (!visibleIds.has(product.id)) {
-    return {
-      locked: true as const,
-      limit,
-      plan: CURRENT_PLAN,
-      product: null,
-      scores: null,
-    };
-  }
-
   const scores = scoreProduct(product);
+  const isComplete = scores.listingQuality >= COMPLETION_THRESHOLD;
+
   return {
     locked: false as const,
     product,
     scores,
+    isComplete,
+    plan,
     limit,
-    plan: CURRENT_PLAN,
   };
 };
 
@@ -526,15 +472,15 @@ export default function ProductDetail() {
         <s-link slot="breadcrumb-actions" href="/app">
           Products
         </s-link>
-        <s-section heading="Upgrade Required">
+        <s-section heading="Not in Your Batch">
           <s-banner tone="warning">
             <s-paragraph>
-              This product is outside your current plan limit.
+              This product is not in your assigned {data.plan} batch.
             </s-paragraph>
             <s-paragraph>
-              Your {data.plan} plan shows the {data.limit} lowest-scoring
-              products. Upgrade to STARTER to see 25 products, or PRO for
-              unlimited access.
+              Your {data.plan} plan assigns the {data.limit} lowest-scoring
+              products at first analysis. Visit the dashboard to view your
+              assigned products, or upgrade to unlock more.
             </s-paragraph>
           </s-banner>
         </s-section>
@@ -542,7 +488,7 @@ export default function ProductDetail() {
     );
   }
 
-  const { product, scores } = data;
+  const { product, scores, isComplete } = data;
 
   const variants = product.variants.edges.map((e) => e.node);
   const images = product.images.edges.map((e) => e.node);
@@ -587,6 +533,14 @@ export default function ProductDetail() {
   return (
     <s-page heading={product.title}>
       <s-link slot="breadcrumb-actions" href="/app">Products</s-link>
+      {isComplete ? (
+        <s-banner tone="success">
+          <s-paragraph>
+            This product has been improved — listing quality is{" "}
+            {scores.listingQuality}/100.
+          </s-paragraph>
+        </s-banner>
+      ) : null}
       {/* Primary info */}
       <s-section heading="Details">
         <s-stack direction="block" gap="base">
