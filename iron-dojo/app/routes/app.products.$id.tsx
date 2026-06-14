@@ -345,12 +345,26 @@ function hasRepeatedConcepts(s: string): boolean {
   return false;
 }
 
+function countOccurrences(needle: string, haystack: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let pos = 0;
+  while ((pos = haystack.indexOf(needle, pos)) !== -1) {
+    count++;
+    pos += needle.length;
+  }
+  return count;
+}
+
 function isStrongImprovement(currentDisplay: string, suggested: string): boolean {
   const trimSuggested = suggested.trim();
   if (!trimSuggested) return false;
   const current = currentDisplay === "(none)" ? "" : currentDisplay.trim();
-  if (normalizeForCompare(trimSuggested) === normalizeForCompare(current)) return false;
+  const normSuggested = normalizeForCompare(trimSuggested);
+  const normCurrent = normalizeForCompare(current);
+  if (normSuggested === normCurrent) return false;
   if (hasRepeatedConcepts(trimSuggested)) return false;
+  if (normCurrent && countOccurrences(normCurrent, normSuggested) > 1) return false;
   if (current && trimSuggested.length < current.length) return false;
   return true;
 }
