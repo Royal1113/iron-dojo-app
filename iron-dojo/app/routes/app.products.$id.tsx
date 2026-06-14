@@ -1,5 +1,6 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
+import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
@@ -7,6 +8,7 @@ import {
   scoreTone,
   revOpportunityTone,
   revOpportunityLabel,
+  stripHtml,
   PLAN_LIMITS,
   CURRENT_PLAN,
 } from "../lib/scoring";
@@ -368,6 +370,59 @@ export default function ProductDetail() {
   );
   const generatedFixes = generateFixes(product, failedChecks);
 
+  const fixRows = generatedFixes.map((fix) => {
+    let key: string;
+    let currentValue: string;
+    switch (fix.label) {
+      case "Suggested Product Title":
+        key = "title";
+        currentValue = product.title || "(none)";
+        break;
+      case "Suggested SEO Title":
+        key = "seoTitle";
+        currentValue = product.seo?.title || "(none)";
+        break;
+      case "Suggested Meta Description":
+        key = "metaDesc";
+        currentValue = product.seo?.description || "(none)";
+        break;
+      case "Suggested Tags":
+        key = "tags";
+        currentValue =
+          product.tags.length > 0 ? product.tags.join(", ") : "(none)";
+        break;
+      case "Suggested Product Description": {
+        key = "description";
+        const stripped = stripHtml(product.descriptionHtml);
+        currentValue =
+          stripped.length > 0
+            ? stripped.length > 120
+              ? stripped.slice(0, 117) + "…"
+              : stripped
+            : "(none)";
+        break;
+      }
+      default:
+        key = fix.label;
+        currentValue = "(none)";
+    }
+    return { ...fix, key, currentValue };
+  });
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  type Step = "idle" | "confirming" | "done";
+  const [step, setStep] = useState<Step>("idle");
+
+  const toggleFix = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setStep("idle");
+  };
+
   return (
     <s-page heading={product.title}>
       <s-link slot="breadcrumb-actions" href="/app">Products</s-link>
@@ -535,14 +590,62 @@ export default function ProductDetail() {
 
       {/* Generated Fixes */}
       <s-section heading="Generated Fixes">
-        {generatedFixes.length > 0 ? (
+        {fixRows.length > 0 ? (
           <s-stack direction="block" gap="base">
-            {generatedFixes.map((fix) => (
-              <s-stack key={fix.label} direction="block" gap="small-200">
-                <s-text>{fix.label}</s-text>
-                <s-text>{fix.suggestion}</s-text>
+            {fixRows.map((fix) => (
+              <s-stack key={fix.key} direction="block" gap="small-200">
+                <s-stack direction="inline" gap="base">
+                  <input
+                    type="checkbox"
+                    id={fix.key}
+                    checked={selected.has(fix.key)}
+                    onChange={() => toggleFix(fix.key)}
+                  />
+                  <label htmlFor={fix.key}>{fix.label}</label>
+                </s-stack>
+                <s-stack direction="inline" gap="base">
+                  <s-text>Current:</s-text>
+                  <s-text>{fix.currentValue}</s-text>
+                </s-stack>
+                <s-stack direction="inline" gap="base">
+                  <s-text>Suggested:</s-text>
+                  <s-text>{fix.suggestion}</s-text>
+                </s-stack>
               </s-stack>
             ))}
+
+            <button
+              type="button"
+              disabled={selected.size === 0}
+              onClick={() => setStep("confirming")}
+            >
+              Apply Selected Fixes
+            </button>
+
+            {step === "confirming" && (
+              <s-stack direction="block" gap="base">
+                <s-banner tone="warning">
+                  <s-paragraph>
+                    You are about to update this product in Shopify. Only
+                    selected fields will be changed. This simulation does not
+                    modify Shopify yet.
+                  </s-paragraph>
+                </s-banner>
+                <button type="button" onClick={() => setStep("done")}>
+                  Confirm Simulation
+                </button>
+              </s-stack>
+            )}
+
+            {step === "done" && (
+              <s-banner tone="success">
+                <s-paragraph>
+                  Simulation complete. Selected fixes are ready to apply in a
+                  future write-enabled version.
+                </s-paragraph>
+              </s-banner>
+            )}
+
             <s-text>
               Preview suggestions only. No changes are made to Shopify until
               approved.
