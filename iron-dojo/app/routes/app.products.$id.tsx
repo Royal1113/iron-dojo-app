@@ -387,6 +387,51 @@ function getNewTags(currentDisplay: string, suggestedDisplay: string): string[] 
   return deduped.filter((t) => !currentNorm.has(normalizeForCompare(t)));
 }
 
+function toSlug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\w-]/g, "");
+}
+
+interface AiMocks {
+  title: string;
+  seoTitle: string;
+  metaDesc: string;
+  tags: string;
+  description: string;
+}
+
+function buildAiMocks(product: {
+  title: string;
+  vendor: string;
+  productType: string;
+  tags: string[];
+}): AiMocks {
+  const { title, vendor, productType } = product;
+  const typeLabel = productType || "product";
+  const vendorLabel = vendor || "our store";
+
+  const rawTitle = `${title} — ${typeLabel} by ${vendorLabel}`;
+  const aiTitle = rawTitle.length > 80 ? rawTitle.slice(0, 77) + "…" : rawTitle;
+
+  const rawSeo = `Buy ${title} | ${vendorLabel}`;
+  const seoTitle = rawSeo.length > 60 ? rawSeo.slice(0, 57) + "…" : rawSeo;
+
+  const rawMeta = `Shop the ${title} from ${vendorLabel}. Perfect for ${typeLabel} enthusiasts. Available now.`;
+  const metaDesc = rawMeta.length > 160 ? rawMeta.slice(0, 157) + "…" : rawMeta;
+
+  const existing = product.tags.map(toSlug).filter(Boolean);
+  const extras = [toSlug(vendor), toSlug(typeLabel)].filter(
+    (t) => t && !existing.includes(t),
+  );
+  const tags = [...new Set([...existing, ...extras])].join(", ");
+
+  const description = `Introducing the ${title} from ${vendorLabel}. Whether you're shopping for yourself or someone special, the ${title} is the perfect ${typeLabel} choice. Available now at ${vendorLabel}.`;
+
+  return { title: aiTitle, seoTitle, metaDesc, tags, description };
+}
+
 export default function ProductDetail() {
   const data = useLoaderData<typeof loader>();
 
@@ -489,6 +534,9 @@ export default function ProductDetail() {
       return isStrongImprovement(fix.currentValue, fix.suggestion) ? fix : null;
     })
     .filter((fix): fix is NonNullable<typeof fix> => fix !== null);
+
+  const [aiStep, setAiStep] = useState<"idle" | "loading" | "done">("idle");
+  const aiMocks = buildAiMocks(product);
 
   return (
     <s-page heading={product.title}>
@@ -723,6 +771,54 @@ export default function ProductDetail() {
         ) : (
           <s-text>No generated fixes needed.</s-text>
         )}
+      </s-section>
+
+      {/* AI Suggestions Sandbox */}
+      <s-section heading="AI Suggestions Sandbox">
+        <s-stack direction="block" gap="base">
+          <button
+            type="button"
+            disabled={aiStep === "loading"}
+            onClick={() => {
+              setAiStep("loading");
+              setTimeout(() => setAiStep("done"), 1000);
+            }}
+          >
+            {aiStep === "loading" ? "Generating…" : "Generate AI Suggestions"}
+          </button>
+
+          {aiStep === "done" && (
+            <s-stack direction="block" gap="base">
+              <s-banner tone="info">
+                <s-paragraph>
+                  Sandbox only. These suggestions are mocked and no AI call has
+                  been made.
+                </s-paragraph>
+              </s-banner>
+
+              {(
+                [
+                  { label: "AI Suggested Title", value: aiMocks.title },
+                  { label: "AI Suggested SEO Title", value: aiMocks.seoTitle },
+                  {
+                    label: "AI Suggested Meta Description",
+                    value: aiMocks.metaDesc,
+                  },
+                  { label: "AI Suggested Tags", value: aiMocks.tags },
+                  {
+                    label: "AI Suggested Product Description",
+                    value: aiMocks.description,
+                  },
+                ] as { label: string; value: string }[]
+              ).map(({ label, value }) => (
+                <s-stack key={label} direction="block" gap="small-200">
+                  <s-text>{label}</s-text>
+                  <s-text>{value}</s-text>
+                </s-stack>
+              ))}
+            </s-stack>
+          )}
+        </s-stack>
       </s-section>
 
       {/* Scores in aside */}
