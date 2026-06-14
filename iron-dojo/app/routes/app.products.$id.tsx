@@ -57,6 +57,13 @@ const PRODUCT_DETAIL_QUERY = `#graphql
   }
 `;
 
+const SHOP_QUERY = `#graphql
+  query IronDojoShop {
+    shop {
+      name
+    }
+  }
+`;
 
 const PRODUCT_UPDATE_MUTATION = `#graphql
   mutation IronDojoProductUpdate($input: ProductInput!) {
@@ -266,8 +273,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const client = new Anthropic({ apiKey });
 
     const promptText = [
-      `Title: ${promptData.title}`,
-      `Vendor: ${promptData.vendor}`,
+      `Shop Name: ${promptData.shopName}`,
+      `Product Title: ${promptData.title}`,
+      `Vendor (internal field, may be generic or test data): ${promptData.vendor}`,
       `Product Type: ${promptData.productType}`,
       `Current Tags: ${promptData.tags.join(", ") || "(none)"}`,
       `Current Description: ${promptData.description || "(none)"}`,
@@ -281,8 +289,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const message = await client.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 8192,
-      system:
+      system: [
         "You are a Shopify product listing optimizer. Return only valid JSON — no markdown fences, no explanation, no extra keys.",
+        "",
+        "Branding rules:",
+        "- Do not invent or assume a brand name.",
+        "- The Vendor field is an internal Shopify field and may contain generic, operational, or test values (e.g. 'Snowboard Vendor', 'IronDojo testing', 'Default Vendor').",
+        "- If the vendor looks like a real, recognisable brand, you may reference it naturally.",
+        "- If the vendor looks generic, internal, or test-like, do NOT use it in customer-facing copy. Use neutral product language instead (e.g. 'this board', 'the product', 'this item').",
+        "- You may use the Shop Name as light attribution only if it reads naturally as a real business name. Never include the shop name in tags.",
+      ].join("\n"),
       messages: [{ role: "user", content: promptText }],
     });
 
@@ -383,11 +399,16 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     };
   }
 
-  const detailResponse = await admin.graphql(PRODUCT_DETAIL_QUERY, {
-    variables: { id: rawId },
-  });
-  const detailJson = await detailResponse.json();
+  const [detailResponse, shopResponse] = await Promise.all([
+    admin.graphql(PRODUCT_DETAIL_QUERY, { variables: { id: rawId } }),
+    admin.graphql(SHOP_QUERY),
+  ]);
+  const [detailJson, shopJson] = await Promise.all([
+    detailResponse.json(),
+    shopResponse.json(),
+  ]);
   const product: ProductDetail | null = detailJson.data?.product ?? null;
+  const shopName: string = shopJson.data?.shop?.name ?? "";
 
   if (!product) {
     throw new Response("Product not found", { status: 404 });
@@ -401,6 +422,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     product,
     scores,
     isComplete,
+    shopName,
     plan,
     limit,
   };
@@ -429,6 +451,7 @@ function capitalize(str: string) {
 interface AiPromptData {
   title: string;
   vendor: string;
+  shopName: string;
   productType: string;
   tags: string[];
   description: string;
@@ -436,17 +459,21 @@ interface AiPromptData {
   seoDescription: string;
 }
 
-function buildAiPrompt(product: {
-  title: string;
-  vendor: string;
-  productType: string;
-  tags: string[];
-  descriptionHtml: string;
-  seo?: { title?: string | null; description?: string | null } | null;
-}): AiPromptData {
+function buildAiPrompt(
+  product: {
+    title: string;
+    vendor: string;
+    productType: string;
+    tags: string[];
+    descriptionHtml: string;
+    seo?: { title?: string | null; description?: string | null } | null;
+  },
+  shopName: string,
+): AiPromptData {
   return {
     title: product.title,
     vendor: product.vendor,
+    shopName,
     productType: product.productType,
     tags: product.tags,
     description: stripHtml(product.descriptionHtml),
@@ -714,7 +741,7 @@ export default function ProductDetail() {
               setAiSelected(new Set());
               setAiStep("idle");
               aiFetcher.submit(
-                { promptJson: JSON.stringify(buildAiPrompt(product)) },
+                { promptJson: JSON.stringify(buildAiPrompt(product, data.shopName ?? "")) },
                 { method: "post" },
               );
             }}
