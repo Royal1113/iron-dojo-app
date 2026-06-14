@@ -139,18 +139,23 @@ function generateFixes(
   const vendor = product.vendor.trim();
   const type = product.productType.trim();
 
+  const normalizeToken = (s: string): string =>
+    s.toLowerCase().replace(/[-\s]/g, "").replace(/[^\w]/g, "");
+
   const toTitleCase = (s: string) =>
     s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
-  const titleWords = new Set(title.toLowerCase().split(/\s+/));
+  const titleWords = title.toLowerCase().split(/\s+/);
 
-  const isRedundantWord = (word: string) => {
-    const w = word.toLowerCase().replace(/s$/, "");
-    for (const tw of titleWords) {
-      if (tw === w || tw.replace(/s$/, "") === w) return true;
-    }
-    return false;
+  const isRedundantWord = (word: string): boolean => {
+    const norm = normalizeToken(word.replace(/s$/, ""));
+    return titleWords.some(
+      (tw) => normalizeToken(tw.replace(/s$/, "")) === norm,
+    );
   };
+
+  const typeIsRedundant =
+    !type || type.split(/\s+/).every((w) => isRedundantWord(w));
 
   if (failed.has("Title is shorter than 20 characters")) {
     const uniqueTypeWords = type
@@ -163,7 +168,7 @@ function generateFixes(
     } else if (vendor) {
       const vendorWord = vendor
         .split(/\s+/)
-        .find((w) => !isRedundantWord(w) && w.length > 2);
+        .find((w) => w.length > 2 && !isRedundantWord(w));
       suggestion = vendorWord
         ? `${toTitleCase(vendorWord)} ${title}`
         : `${title} — Premium Quality`;
@@ -181,13 +186,8 @@ function generateFixes(
 
   if (failed.has("SEO meta description is missing")) {
     const v = vendor || "our store";
-    const typeFirstWord = type.split(/\s+/)[0]?.toLowerCase() ?? "";
-    const typeIsRedundant =
-      !type ||
-      titleWords.has(typeFirstWord) ||
-      titleWords.has(typeFirstWord.replace(/s$/, ""));
     let suggestion: string;
-    if (typeIsRedundant || !type) {
+    if (typeIsRedundant) {
       suggestion =
         `The ${title} from ${v} is perfect for gifting and personal use. ` +
         `Shop the full range from ${v}, available now.`;
@@ -201,10 +201,12 @@ function generateFixes(
   }
 
   if (failed.has("Fewer than 5 tags")) {
-    const titlePhrase =
-      title.toLowerCase().split(/\s+/).filter((w) => w.length > 2).join("-");
-    const typePhrase =
-      type.toLowerCase().split(/\s+/).filter((w) => w.length > 2).join("-");
+    const titlePhrase = titleWords.filter((w) => w.length > 2).join("-");
+    const typePhrase = type
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+      .join("-");
     const singleWords = [title, vendor, type]
       .join(" ")
       .toLowerCase()
@@ -216,21 +218,21 @@ function generateFixes(
     const candidates = [
       ...existing,
       ...(titlePhrase ? [titlePhrase] : []),
-      ...(typePhrase && typePhrase !== titlePhrase ? [typePhrase] : []),
+      ...(typePhrase ? [typePhrase] : []),
       ...singleWords,
     ];
-    const combined = [...new Set(candidates)].slice(0, 7);
+    const seen = new Map<string, string>();
+    for (const c of candidates) {
+      const key = normalizeToken(c);
+      if (!seen.has(key)) seen.set(key, c);
+    }
+    const combined = [...seen.values()].slice(0, 7);
     fixes.push({ label: "Suggested Tags", suggestion: combined.join(", ") });
   }
 
   if (failed.has("Description is missing or under 100 characters")) {
     const v = vendor || "our brand";
-    const typeFirstWord = type.split(/\s+/)[0]?.toLowerCase() ?? "";
-    const typeIsRedundant =
-      !type ||
-      titleWords.has(typeFirstWord) ||
-      titleWords.has(typeFirstWord.replace(/s$/, ""));
-    const suggestion = typeIsRedundant || !type
+    const suggestion = typeIsRedundant
       ? `The ${title} from ${v} is perfect for gifting and personal use. ` +
         `Shop the full range from ${v}, available now.`
       : `The ${title} from ${v} is a ${type.toLowerCase()} crafted for quality and everyday use. ` +
