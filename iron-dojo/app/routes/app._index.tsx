@@ -123,7 +123,9 @@ export default function IronDojoDashboard() {
                       )}
                     </s-table-cell>
                     <s-table-cell>
-                      <s-text>{product.title}</s-text>
+                      <s-link href={`/app/products/${encodeURIComponent(product.id)}`}>
+                        {product.title}
+                      </s-link>
                     </s-table-cell>
                     <s-table-cell>
                       <s-badge tone={statusTone(product.status)}>
