@@ -1,0 +1,84 @@
+Plan M17 only. Do not build yet.
+
+Goal:
+Design real Shopify writeback for approved AI recommendations.
+
+Do not build yet.
+Do not edit files.
+Do not change scopes yet.
+Do not add write_products yet.
+Do not modify Shopify data yet.
+Do not add billing.
+Do not add database tables unless the plan explains why they are necessary.
+Do not change authentication.
+
+Current working flow:
+Product detail page reads product data.
+Iron Dojo scores the product.
+Fix Plan identifies issues.
+Claude generates AI recommendations.
+AI Quality Gate validates recommendations.
+Merchant selects recommendations.
+Confirm Simulation works but does not write to Shopify.
+
+M17 planning questions:
+
+1. Required Shopify scope:
+   - Is write_products required?
+   - What exact shopify.app.toml change is needed?
+   - What reauthorization behavior should we expect?
+
+2. Mutation:
+   - Which Shopify Admin GraphQL mutation should be used?
+   - What exact mutation shape should update:
+     - title
+     - bodyHtml/product description
+     - SEO title
+     - SEO meta description
+     - tags
+
+3. Field mapping:
+   - Map each selected AI recommendation to the Shopify ProductInput field.
+
+4. Partial updates:
+   - How do we update only selected fields?
+   - How do we avoid overwriting fields the merchant did not approve?
+
+5. Tags:
+   - Should tags replace the existing tag list or merge with existing tags?
+   - How do we dedupe tags?
+   - How do we preserve existing merchant tags?
+
+6. Confirmation flow:
+   - Should the current simulation flow become the real write flow?
+   - What button labels should change?
+   - What warning text should appear before writing?
+
+7. Error handling:
+   - How should Shopify userErrors be displayed?
+   - How should network/API errors be displayed?
+   - What happens if one selected field fails?
+
+8. Rollback / safety:
+   - Do we need to store previous values before updating?
+   - Can we avoid adding a database for M17?
+   - Should rollback be manual through Shopify admin for now?
+
+9. Audit trail:
+   - Should we log updated fields to console only for M17?
+   - Should we defer database audit logs to a later milestone?
+
+10. Files that would change:
+   - List every file.
+   - Explain each change.
+
+11. Smallest safe implementation:
+   - Define the absolute minimum version that safely proves:
+     Select recommendations → confirm → update Shopify → reload product → score changes.
+
+Return the implementation plan only.
+
+Do not edit files.
+Do not run commands.
+Do not install packages.
+Do not change scopes yet.
