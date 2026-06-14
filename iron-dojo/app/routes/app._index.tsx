@@ -2,6 +2,11 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import {
+  scoreProduct,
+  scoreTone,
+  revOpportunityTone,
+} from "../lib/scoring";
 
 const PRODUCTS_QUERY = `#graphql
   query IronDojoProducts {
@@ -12,9 +17,20 @@ const PRODUCTS_QUERY = `#graphql
           title
           status
           totalInventory
+          productType
+          vendor
+          descriptionHtml
+          tags
           featuredImage {
             url
             altText
+          }
+          images(first: 3) {
+            edges {
+              node {
+                url
+              }
+            }
           }
           variants(first: 1) {
             edges {
@@ -22,6 +38,10 @@ const PRODUCTS_QUERY = `#graphql
                 price
               }
             }
+          }
+          seo {
+            title
+            description
           }
         }
       }
@@ -34,8 +54,14 @@ type Product = {
   title: string;
   status: string;
   totalInventory: number | null;
+  productType: string;
+  vendor: string;
+  descriptionHtml: string;
+  tags: string[];
   featuredImage: { url: string; altText: string | null } | null;
+  images: { edges: { node: { url: string } }[] };
   variants: { edges: { node: { price: string } }[] };
+  seo: { title: string | null; description: string | null } | null;
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -44,9 +70,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const response = await admin.graphql(PRODUCTS_QUERY);
   const json = await response.json();
 
-  const products: Product[] = (
+  const raw: Product[] = (
     json.data?.products?.edges ?? []
   ).map((edge: { node: Product }) => edge.node);
+
+  const products = raw
+    .map((p) => ({ ...p, scores: scoreProduct(p) }))
+    .sort((a, b) => a.scores.listingQuality - b.scores.listingQuality);
 
   return { products };
 };
@@ -77,7 +107,7 @@ export default function IronDojoDashboard() {
   return (
     <s-page heading="Iron Dojo">
       {count === 0 ? (
-        <s-section heading="Products">
+        <s-section heading="Opportunity Queue">
           <s-heading>No products found</s-heading>
           <s-paragraph>
             This store has no products yet. Add products in your Shopify admin
@@ -86,7 +116,7 @@ export default function IronDojoDashboard() {
         </s-section>
       ) : (
         <s-section
-          heading={`Products — Showing ${count} ${count === 1 ? "product" : "products"}`}
+          heading={`Opportunity Queue — lowest scoring products first (${count} ${count === 1 ? "product" : "products"})`}
         >
           <s-table>
             <s-table-header-row>
@@ -94,15 +124,16 @@ export default function IronDojoDashboard() {
               <s-table-header>Title</s-table-header>
               <s-table-header>Status</s-table-header>
               <s-table-header>Price</s-table-header>
-              <s-table-header>Inventory</s-table-header>
+              <s-table-header>Listing Quality</s-table-header>
+              <s-table-header>Revenue Opportunity</s-table-header>
+              <s-table-header>Issues</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {products.map((product) => {
                 const price = product.variants.edges[0]?.node.price ?? "—";
-                const inventory =
-                  product.totalInventory !== null
-                    ? String(product.totalInventory)
-                    : "—";
+                const issueCount = product.scores.checks.filter(
+                  (c) => !c.passed,
+                ).length;
                 return (
                   <s-table-row key={product.id}>
                     <s-table-cell>
@@ -123,7 +154,9 @@ export default function IronDojoDashboard() {
                       )}
                     </s-table-cell>
                     <s-table-cell>
-                      <s-link href={`/app/products/${product.id.split("/").pop()}`}>
+                      <s-link
+                        href={`/app/products/${product.id.split("/").pop()}`}
+                      >
                         {product.title}
                       </s-link>
                     </s-table-cell>
@@ -136,7 +169,23 @@ export default function IronDojoDashboard() {
                       <s-text>${price}</s-text>
                     </s-table-cell>
                     <s-table-cell>
-                      <s-text>{inventory}</s-text>
+                      <s-badge
+                        tone={scoreTone(product.scores.listingQuality)}
+                      >
+                        {product.scores.listingQuality}/100
+                      </s-badge>
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-badge
+                        tone={revOpportunityTone(
+                          product.scores.revenueOpportunity,
+                        )}
+                      >
+                        {product.scores.revenueOpportunity}/100
+                      </s-badge>
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-text>{issueCount}</s-text>
                     </s-table-cell>
                   </s-table-row>
                 );
