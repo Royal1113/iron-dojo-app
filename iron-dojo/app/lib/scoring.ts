@@ -1,4 +1,4 @@
-export type CheckResult = { label: string; passed: boolean };
+export type CheckResult = { label: string; passed: boolean; weight: number };
 
 export type ProductScores = {
   listingQuality: number;
@@ -31,52 +31,62 @@ export function scoreProduct(product: ScoredProduct): ProductScores {
     {
       label: "Status is not Active",
       passed: product.status === "ACTIVE",
+      weight: 15,
     },
     {
       label: "Inventory is zero or missing",
       passed: (product.totalInventory ?? 0) > 0,
+      weight: 10,
     },
     {
       label: "Product type is missing",
       passed: product.productType.trim().length > 0,
+      weight: 5,
     },
     {
       label: "Vendor is missing",
       passed: product.vendor.trim().length > 0,
+      weight: 5,
     },
     {
       label: "Title is shorter than 20 characters",
       passed: product.title.trim().length >= 20,
+      weight: 10,
     },
     {
       label: "Description is missing or under 100 characters",
       passed: stripHtml(product.descriptionHtml).length >= 100,
+      weight: 15,
     },
     {
       label: "Fewer than 5 tags",
       passed: product.tags.length >= 5,
+      weight: 10,
     },
     {
       label: "Fewer than 3 images",
       passed: imageCount >= 3,
+      weight: 10,
     },
     {
       label: "No variant price found",
       passed: parseFloat(product.variants.edges[0]?.node.price ?? "0") > 0,
+      weight: 5,
     },
     {
       label: "SEO title is missing",
       passed: (product.seo?.title ?? "").trim().length > 0,
+      weight: 8,
     },
     {
       label: "SEO meta description is missing",
       passed: (product.seo?.description ?? "").trim().length > 0,
+      weight: 7,
     },
   ];
 
-  const weights = [15, 10, 5, 5, 10, 15, 10, 10, 5, 8, 7];
   const listingQuality = checks.reduce(
-    (sum, check, i) => sum + (check.passed ? weights[i] : 0),
+    (sum, check) => sum + (check.passed ? check.weight : 0),
     0,
   );
 

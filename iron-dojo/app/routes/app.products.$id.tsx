@@ -126,6 +126,20 @@ type GateProduct = {
   seo: { title: string | null; description: string | null } | null;
 };
 
+const FIX_LABELS: Record<string, string> = {
+  "Status is not Active": "Set product status to Active",
+  "Inventory is zero or missing": "Add inventory",
+  "Product type is missing": "Add a product type",
+  "Vendor is missing": "Add a vendor name",
+  "Title is shorter than 20 characters": "Lengthen the product title",
+  "Description is missing or under 100 characters": "Improve description",
+  "Fewer than 5 tags": "Add more tags",
+  "Fewer than 3 images": "Add more product images",
+  "No variant price found": "Set a variant price",
+  "SEO title is missing": "Add SEO title",
+  "SEO meta description is missing": "Add SEO meta description",
+};
+
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
 
@@ -229,6 +243,12 @@ export default function ProductDetail() {
   const images = product.images.edges.map((e) => e.node);
   const hasSeo = product.seo?.title || product.seo?.description;
   const failedChecks = scores.checks.filter((c) => !c.passed);
+  const fixPlan = [...failedChecks].sort((a, b) => b.weight - a.weight);
+  const pointsRecoverable = fixPlan.reduce((sum, c) => sum + c.weight, 0);
+  const potentialScore = Math.min(
+    scores.listingQuality + pointsRecoverable,
+    100,
+  );
 
   return (
     <s-page heading={product.title}>
@@ -360,6 +380,27 @@ export default function ProductDetail() {
           </s-stack>
         </s-section>
       ) : null}
+
+      {/* Fix Plan */}
+      {fixPlan.length > 0 ? (
+        <s-section heading="Fix Plan">
+          <s-stack direction="block" gap="small-200">
+            {fixPlan.map((check) => (
+              <s-stack key={check.label} direction="inline" gap="base">
+                <s-badge tone="success">+{check.weight}</s-badge>
+                <s-text>{FIX_LABELS[check.label] ?? check.label}</s-text>
+              </s-stack>
+            ))}
+          </s-stack>
+          <s-text>
+            Potential Score After Fixes: {potentialScore}/100
+          </s-text>
+        </s-section>
+      ) : (
+        <s-section heading="Fix Plan">
+          <s-text>All checks passed — no fixes needed.</s-text>
+        </s-section>
+      )}
 
       {/* Scores in aside */}
       <s-section slot="aside" heading="Iron Dojo Scores">
