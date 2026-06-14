@@ -123,7 +123,7 @@ export default function IronDojoDashboard() {
                       )}
                     </s-table-cell>
                     <s-table-cell>
-                      <s-link href={`/app/products/${encodeURIComponent(product.id)}`}>
+                      <s-link href={`/app/products/${product.id.split("/").pop()}`}>
                         {product.title}
                       </s-link>
                     </s-table-cell>

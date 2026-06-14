@@ -70,7 +70,7 @@ type ProductDetail = {
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
 
-  const rawId = decodeURIComponent(params.id ?? "");
+  const rawId = `gid://shopify/Product/${params.id ?? ""}`;
 
   const response = await admin.graphql(PRODUCT_DETAIL_QUERY, {
     variables: { id: rawId },
