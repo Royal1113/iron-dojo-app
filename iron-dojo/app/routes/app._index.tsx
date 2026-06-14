@@ -141,6 +141,7 @@ export default function IronDojoDashboard() {
               <s-table-header>Listing Quality</s-table-header>
               <s-table-header>Revenue Opportunity</s-table-header>
               <s-table-header>Issues</s-table-header>
+              <s-table-header>Top Issue</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {visibleProducts.map((product) => {
@@ -148,6 +149,9 @@ export default function IronDojoDashboard() {
                 const issueCount = product.scores.checks.filter(
                   (c) => !c.passed,
                 ).length;
+                const topIssue =
+                  product.scores.checks.find((c) => !c.passed)?.label ??
+                  "None";
                 return (
                   <s-table-row key={product.id}>
                     <s-table-cell>
@@ -200,6 +204,9 @@ export default function IronDojoDashboard() {
                     </s-table-cell>
                     <s-table-cell>
                       <s-text>{issueCount}</s-text>
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-text>{topIssue}</s-text>
                     </s-table-cell>
                   </s-table-row>
                 );
