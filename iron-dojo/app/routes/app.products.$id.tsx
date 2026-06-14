@@ -139,55 +139,103 @@ function generateFixes(
   const vendor = product.vendor.trim();
   const type = product.productType.trim();
 
+  const toTitleCase = (s: string) =>
+    s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+  const titleWords = new Set(title.toLowerCase().split(/\s+/));
+
+  const isRedundantWord = (word: string) => {
+    const w = word.toLowerCase().replace(/s$/, "");
+    for (const tw of titleWords) {
+      if (tw === w || tw.replace(/s$/, "") === w) return true;
+    }
+    return false;
+  };
+
   if (failed.has("Title is shorter than 20 characters")) {
+    const uniqueTypeWords = type
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !isRedundantWord(w));
+
     let suggestion: string;
-    if (vendor && type) suggestion = `${vendor} ${type} — ${title}`;
-    else if (vendor) suggestion = `${vendor} — ${title}`;
-    else if (type) suggestion = `${type} — ${title}`;
-    else suggestion = `${title} — Premium Quality`;
+    if (uniqueTypeWords.length > 0) {
+      suggestion = `${toTitleCase(uniqueTypeWords.join(" "))} ${title}`;
+    } else if (vendor) {
+      const vendorWord = vendor
+        .split(/\s+/)
+        .find((w) => !isRedundantWord(w) && w.length > 2);
+      suggestion = vendorWord
+        ? `${toTitleCase(vendorWord)} ${title}`
+        : `${title} — Premium Quality`;
+    } else {
+      suggestion = `${title} — Premium Quality`;
+    }
     fixes.push({ label: "Suggested Product Title", suggestion });
   }
 
   if (failed.has("SEO title is missing")) {
-    const suggestion = vendor
-      ? `${title} | ${vendor}`
-      : `${title} | Shop Now`;
+    const raw = vendor ? `${title} | ${vendor}` : `${title} | Shop Now`;
+    const suggestion = raw.length <= 60 ? raw : raw.slice(0, 57) + "…";
     fixes.push({ label: "Suggested SEO Title", suggestion });
   }
 
   if (failed.has("SEO meta description is missing")) {
     const v = vendor || "our store";
-    const t = type || "product";
-    fixes.push({
-      label: "Suggested Meta Description",
-      suggestion: `Shop ${title} from ${v}. A quality ${t} available now.`,
-    });
+    const typeFirstWord = type.split(/\s+/)[0]?.toLowerCase() ?? "";
+    const typeIsRedundant =
+      !type ||
+      titleWords.has(typeFirstWord) ||
+      titleWords.has(typeFirstWord.replace(/s$/, ""));
+    let suggestion: string;
+    if (typeIsRedundant || !type) {
+      suggestion =
+        `The ${title} from ${v} is perfect for gifting and personal use. ` +
+        `Shop the full range from ${v}, available now.`;
+    } else {
+      suggestion =
+        `The ${title} from ${v} — a ${type.toLowerCase()} built for quality. ` +
+        `Shop the full range from ${v}, available now.`;
+    }
+    if (suggestion.length > 160) suggestion = suggestion.slice(0, 157) + "…";
+    fixes.push({ label: "Suggested Meta Description", suggestion });
   }
 
   if (failed.has("Fewer than 5 tags")) {
-    const words = [title, vendor, type]
+    const titlePhrase =
+      title.toLowerCase().split(/\s+/).filter((w) => w.length > 2).join("-");
+    const typePhrase =
+      type.toLowerCase().split(/\s+/).filter((w) => w.length > 2).join("-");
+    const singleWords = [title, vendor, type]
       .join(" ")
       .toLowerCase()
       .split(/\s+/)
       .filter((w) => w.length > 2);
-    const existing = product.tags.map((t) => t.toLowerCase());
-    const combined = [...new Set([...existing, ...words])].slice(0, 7);
-    fixes.push({
-      label: "Suggested Tags",
-      suggestion: combined.join(", "),
-    });
+    const existing = product.tags.map((t) =>
+      t.toLowerCase().replace(/\s+/g, "-"),
+    );
+    const candidates = [
+      ...existing,
+      ...(titlePhrase ? [titlePhrase] : []),
+      ...(typePhrase && typePhrase !== titlePhrase ? [typePhrase] : []),
+      ...singleWords,
+    ];
+    const combined = [...new Set(candidates)].slice(0, 7);
+    fixes.push({ label: "Suggested Tags", suggestion: combined.join(", ") });
   }
 
   if (failed.has("Description is missing or under 100 characters")) {
     const v = vendor || "our brand";
-    const t = type || "product";
-    fixes.push({
-      label: "Suggested Product Description",
-      suggestion:
-        `${title} by ${v} is a quality ${t}. ` +
-        `Built for reliability and craftsmanship, this ${t} is available now. ` +
-        `Shop the full range from ${v}.`,
-    });
+    const typeFirstWord = type.split(/\s+/)[0]?.toLowerCase() ?? "";
+    const typeIsRedundant =
+      !type ||
+      titleWords.has(typeFirstWord) ||
+      titleWords.has(typeFirstWord.replace(/s$/, ""));
+    const suggestion = typeIsRedundant || !type
+      ? `The ${title} from ${v} is perfect for gifting and personal use. ` +
+        `Shop the full range from ${v}, available now.`
+      : `The ${title} from ${v} is a ${type.toLowerCase()} crafted for quality and everyday use. ` +
+        `Browse the full collection from ${v} and find exactly what you need, available now.`;
+    fixes.push({ label: "Suggested Product Description", suggestion });
   }
 
   return fixes;
