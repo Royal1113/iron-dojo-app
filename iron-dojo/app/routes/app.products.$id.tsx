@@ -283,7 +283,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { applySuccess: true as const };
     } catch (err) {
       console.error("[IronDojo] productUpdate error:", err);
-      return { applyError: "Failed to update product. Please try again." };
+      const e = err as { message?: string; body?: { errors?: { graphQLErrors?: { message: string }[] } } };
+      const gqlMessages = e.body?.errors?.graphQLErrors?.map((g) => g.message).join(" ");
+      const applyError = gqlMessages || e.message || "Failed to update product. Please try again.";
+      return { applyError };
     }
   }
 
