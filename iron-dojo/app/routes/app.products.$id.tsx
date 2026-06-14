@@ -246,7 +246,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       if (selectedFields.includes("title")) input.title = aiValues.title;
       if (selectedFields.includes("description"))
-        input.bodyHtml = aiValues.description;
+        input.descriptionHtml = aiValues.description;
 
       if (
         selectedFields.includes("seoTitle") ||
