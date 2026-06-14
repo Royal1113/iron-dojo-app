@@ -394,42 +394,76 @@ function toSlug(s: string): string {
     .replace(/[^\w-]/g, "");
 }
 
-interface AiMocks {
-  title: string;
-  seoTitle: string;
-  metaDesc: string;
-  tags: string;
-  description: string;
-}
-
-function buildAiMocks(product: {
+interface AiPromptData {
   title: string;
   vendor: string;
   productType: string;
   tags: string[];
-}): AiMocks {
-  const { title, vendor, productType } = product;
+  description: string;
+  seoTitle: string;
+  seoDescription: string;
+}
+
+function buildAiPrompt(product: {
+  title: string;
+  vendor: string;
+  productType: string;
+  tags: string[];
+  descriptionHtml: string;
+  seo?: { title?: string | null; description?: string | null } | null;
+}): AiPromptData {
+  return {
+    title: product.title,
+    vendor: product.vendor,
+    productType: product.productType,
+    tags: product.tags,
+    description: stripHtml(product.descriptionHtml),
+    seoTitle: product.seo?.title ?? "",
+    seoDescription: product.seo?.description ?? "",
+  };
+}
+
+export interface AiSuggestionResult {
+  title: string;
+  seoTitle: string;
+  metaDescription: string;
+  tags: string[];
+  description: string;
+}
+
+async function generateAiSuggestions(
+  promptData: AiPromptData,
+): Promise<AiSuggestionResult> {
+  const { title, vendor, productType, tags } = promptData;
   const typeLabel = productType || "product";
   const vendorLabel = vendor || "our store";
 
   const rawTitle = `${title} — ${typeLabel} by ${vendorLabel}`;
-  const aiTitle = rawTitle.length > 80 ? rawTitle.slice(0, 77) + "…" : rawTitle;
+  const suggestedTitle =
+    rawTitle.length > 80 ? rawTitle.slice(0, 77) + "…" : rawTitle;
 
   const rawSeo = `Buy ${title} | ${vendorLabel}`;
   const seoTitle = rawSeo.length > 60 ? rawSeo.slice(0, 57) + "…" : rawSeo;
 
   const rawMeta = `Shop the ${title} from ${vendorLabel}. Perfect for ${typeLabel} enthusiasts. Available now.`;
-  const metaDesc = rawMeta.length > 160 ? rawMeta.slice(0, 157) + "…" : rawMeta;
+  const metaDescription =
+    rawMeta.length > 160 ? rawMeta.slice(0, 157) + "…" : rawMeta;
 
-  const existing = product.tags.map(toSlug).filter(Boolean);
+  const existing = tags.map(toSlug).filter(Boolean);
   const extras = [toSlug(vendor), toSlug(typeLabel)].filter(
     (t) => t && !existing.includes(t),
   );
-  const tags = [...new Set([...existing, ...extras])].join(", ");
+  const suggestedTags = [...new Set([...existing, ...extras])];
 
   const description = `Introducing the ${title} from ${vendorLabel}. Whether you're shopping for yourself or someone special, the ${title} is the perfect ${typeLabel} choice. Available now at ${vendorLabel}.`;
 
-  return { title: aiTitle, seoTitle, metaDesc, tags, description };
+  return {
+    title: suggestedTitle,
+    seoTitle,
+    metaDescription,
+    tags: suggestedTags,
+    description,
+  };
 }
 
 export default function ProductDetail() {
@@ -536,7 +570,7 @@ export default function ProductDetail() {
     .filter((fix): fix is NonNullable<typeof fix> => fix !== null);
 
   const [aiStep, setAiStep] = useState<"idle" | "loading" | "done">("idle");
-  const aiMocks = buildAiMocks(product);
+  const [aiResult, setAiResult] = useState<AiSuggestionResult | null>(null);
 
   return (
     <s-page heading={product.title}>
@@ -781,13 +815,16 @@ export default function ProductDetail() {
             disabled={aiStep === "loading"}
             onClick={() => {
               setAiStep("loading");
-              setTimeout(() => setAiStep("done"), 1000);
+              generateAiSuggestions(buildAiPrompt(product)).then((result) => {
+                setAiResult(result);
+                setAiStep("done");
+              });
             }}
           >
             {aiStep === "loading" ? "Generating…" : "Generate AI Suggestions"}
           </button>
 
-          {aiStep === "done" && (
+          {aiStep === "done" && aiResult && (
             <s-stack direction="block" gap="base">
               <s-banner tone="info">
                 <s-paragraph>
@@ -798,16 +835,19 @@ export default function ProductDetail() {
 
               {(
                 [
-                  { label: "AI Suggested Title", value: aiMocks.title },
-                  { label: "AI Suggested SEO Title", value: aiMocks.seoTitle },
+                  { label: "AI Suggested Title", value: aiResult.title },
+                  { label: "AI Suggested SEO Title", value: aiResult.seoTitle },
                   {
                     label: "AI Suggested Meta Description",
-                    value: aiMocks.metaDesc,
+                    value: aiResult.metaDescription,
                   },
-                  { label: "AI Suggested Tags", value: aiMocks.tags },
+                  {
+                    label: "AI Suggested Tags",
+                    value: aiResult.tags.join(", "),
+                  },
                   {
                     label: "AI Suggested Product Description",
-                    value: aiMocks.description,
+                    value: aiResult.description,
                   },
                 ] as { label: string; value: string }[]
               ).map(({ label, value }) => (
