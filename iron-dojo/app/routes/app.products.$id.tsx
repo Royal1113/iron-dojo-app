@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
+import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
@@ -414,6 +415,20 @@ export default function ProductDetail() {
   const aiError = aiFetcher.data?.error ?? null;
   const aiLoading = aiFetcher.state === "submitting";
 
+  const [aiSelected, setAiSelected] = useState<Set<string>>(new Set());
+  type AiStep = "idle" | "confirming" | "done";
+  const [aiStep, setAiStep] = useState<AiStep>("idle");
+
+  const toggleAiRec = (key: string) => {
+    setAiSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setAiStep("idle");
+  };
+
   return (
     <s-page heading={product.title}>
       <s-link slot="breadcrumb-actions" href="/app">Products</s-link>
@@ -587,6 +602,8 @@ export default function ProductDetail() {
             type="button"
             disabled={aiLoading}
             onClick={() => {
+              setAiSelected(new Set());
+              setAiStep("idle");
               aiFetcher.submit(
                 { promptJson: JSON.stringify(buildAiPrompt(product)) },
                 { method: "post" },
@@ -613,27 +630,90 @@ export default function ProductDetail() {
 
               {(
                 [
-                  { label: "AI Suggested Title", value: aiResult.title },
-                  { label: "AI Suggested SEO Title", value: aiResult.seoTitle },
                   {
-                    label: "AI Suggested Meta Description",
-                    value: aiResult.metaDescription,
+                    key: "title",
+                    label: "Title",
+                    current: product.title || "(none)",
+                    suggested: aiResult.title,
                   },
                   {
-                    label: "AI Suggested Tags",
-                    value: aiResult.tags.join(", "),
+                    key: "seoTitle",
+                    label: "SEO Title",
+                    current: product.seo?.title || "(none)",
+                    suggested: aiResult.seoTitle,
                   },
                   {
-                    label: "AI Suggested Product Description",
-                    value: aiResult.description,
+                    key: "metaDescription",
+                    label: "Meta Description",
+                    current: product.seo?.description || "(none)",
+                    suggested: aiResult.metaDescription,
                   },
-                ] as { label: string; value: string }[]
-              ).map(({ label, value }) => (
-                <s-stack key={label} direction="block" gap="small-200">
-                  <s-text>{label}</s-text>
-                  <s-text>{value}</s-text>
+                  {
+                    key: "tags",
+                    label: "Tags",
+                    current: product.tags.join(", ") || "(none)",
+                    suggested: aiResult.tags.join(", "),
+                  },
+                  {
+                    key: "description",
+                    label: "Product Description",
+                    current: stripHtml(product.descriptionHtml) || "(none)",
+                    suggested: aiResult.description,
+                  },
+                ] as { key: string; label: string; current: string; suggested: string }[]
+              ).map(({ key, label, current, suggested }) => (
+                <s-stack key={key} direction="block" gap="small-200">
+                  <s-stack direction="inline" gap="base">
+                    <input
+                      type="checkbox"
+                      id={`ai-rec-${key}`}
+                      checked={aiSelected.has(key)}
+                      onChange={() => toggleAiRec(key)}
+                    />
+                    <label htmlFor={`ai-rec-${key}`}>{label}</label>
+                  </s-stack>
+                  <s-stack direction="inline" gap="base">
+                    <s-text>Current:</s-text>
+                    <s-text>{current}</s-text>
+                  </s-stack>
+                  <s-stack direction="inline" gap="base">
+                    <s-text>AI Recommended:</s-text>
+                    <s-text>{suggested}</s-text>
+                  </s-stack>
                 </s-stack>
               ))}
+
+              <button
+                type="button"
+                disabled={aiSelected.size === 0}
+                onClick={() => setAiStep("confirming")}
+              >
+                Apply Selected Recommendations
+              </button>
+
+              {aiStep === "confirming" && (
+                <s-stack direction="block" gap="base">
+                  <s-banner tone="warning">
+                    <s-paragraph>
+                      You are about to update this product in Shopify. Only
+                      selected fields will be changed. This simulation does not
+                      modify Shopify yet.
+                    </s-paragraph>
+                  </s-banner>
+                  <button type="button" onClick={() => setAiStep("done")}>
+                    Confirm Simulation
+                  </button>
+                </s-stack>
+              )}
+
+              {aiStep === "done" && (
+                <s-banner tone="success">
+                  <s-paragraph>
+                    Simulation complete. Selected AI recommendations are ready
+                    to apply in a future write-enabled version.
+                  </s-paragraph>
+                </s-banner>
+              )}
             </s-stack>
           )}
         </s-stack>
