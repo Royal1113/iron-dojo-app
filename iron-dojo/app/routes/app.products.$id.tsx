@@ -384,17 +384,30 @@ export default function ProductDetail() {
       {/* Fix Plan */}
       {fixPlan.length > 0 ? (
         <s-section heading="Fix Plan">
-          <s-stack direction="block" gap="small-200">
-            {fixPlan.map((check) => (
-              <s-stack key={check.label} direction="inline" gap="base">
-                <s-badge tone="success">+{check.weight}</s-badge>
-                <s-text>{FIX_LABELS[check.label] ?? check.label}</s-text>
+          <s-stack direction="block" gap="base">
+            <s-stack direction="block" gap="small-200">
+              <s-stack direction="inline" gap="base">
+                <s-text>Current Score:</s-text>
+                <s-text>{scores.listingQuality}/100</s-text>
               </s-stack>
-            ))}
+              <s-stack direction="inline" gap="base">
+                <s-text>Potential Score:</s-text>
+                <s-text>{potentialScore}/100</s-text>
+              </s-stack>
+              <s-stack direction="inline" gap="base">
+                <s-text>Improvement:</s-text>
+                <s-text>+{pointsRecoverable} points</s-text>
+              </s-stack>
+            </s-stack>
+            <s-stack direction="block" gap="small-200">
+              {fixPlan.map((check) => (
+                <s-stack key={check.label} direction="inline" gap="base">
+                  <s-badge tone="success">+{check.weight}</s-badge>
+                  <s-text>{FIX_LABELS[check.label] ?? check.label}</s-text>
+                </s-stack>
+              ))}
+            </s-stack>
           </s-stack>
-          <s-text>
-            Potential Score After Fixes: {potentialScore}/100
-          </s-text>
         </s-section>
       ) : (
         <s-section heading="Fix Plan">
