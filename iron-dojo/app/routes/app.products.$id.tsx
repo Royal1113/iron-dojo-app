@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
-import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
@@ -128,122 +127,6 @@ type GateProduct = {
   seo: { title: string | null; description: string | null } | null;
 };
 
-type GeneratedFix = { label: string; suggestion: string };
-
-function generateFixes(
-  product: ProductDetail,
-  failedChecks: { label: string }[],
-): GeneratedFix[] {
-  const failed = new Set(failedChecks.map((c) => c.label));
-  const fixes: GeneratedFix[] = [];
-
-  const title = product.title.trim();
-  const vendor = product.vendor.trim();
-  const type = product.productType.trim();
-
-  const normalizeToken = (s: string): string =>
-    s.toLowerCase().replace(/[-\s]/g, "").replace(/[^\w]/g, "");
-
-  const toTitleCase = (s: string) =>
-    s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-
-  const titleWords = title.toLowerCase().split(/\s+/);
-
-  const isRedundantWord = (word: string): boolean => {
-    const norm = normalizeToken(word.replace(/s$/, ""));
-    return titleWords.some(
-      (tw) => normalizeToken(tw.replace(/s$/, "")) === norm,
-    );
-  };
-
-  const typeIsRedundant =
-    !type || type.split(/\s+/).every((w) => isRedundantWord(w));
-
-  if (failed.has("Title is shorter than 20 characters")) {
-    const uniqueTypeWords = type
-      .split(/\s+/)
-      .filter((w) => w.length > 2 && !isRedundantWord(w));
-
-    let suggestion: string;
-    if (uniqueTypeWords.length > 0) {
-      suggestion = `${toTitleCase(uniqueTypeWords.join(" "))} ${title}`;
-    } else if (vendor) {
-      const vendorWord = vendor
-        .split(/\s+/)
-        .find((w) => w.length > 2 && !isRedundantWord(w));
-      suggestion = vendorWord
-        ? `${toTitleCase(vendorWord)} ${title}`
-        : `${title} — Premium Quality`;
-    } else {
-      suggestion = `${title} — Premium Quality`;
-    }
-    fixes.push({ label: "Suggested Product Title", suggestion });
-  }
-
-  if (failed.has("SEO title is missing")) {
-    const raw = vendor ? `${title} | ${vendor}` : `${title} | Shop Now`;
-    const suggestion = raw.length <= 60 ? raw : raw.slice(0, 57) + "…";
-    fixes.push({ label: "Suggested SEO Title", suggestion });
-  }
-
-  if (failed.has("SEO meta description is missing")) {
-    const v = vendor || "our store";
-    let suggestion: string;
-    if (typeIsRedundant) {
-      suggestion =
-        `The ${title} from ${v} is perfect for gifting and personal use. ` +
-        `Shop the full range from ${v}, available now.`;
-    } else {
-      suggestion =
-        `The ${title} from ${v} — a ${type.toLowerCase()} built for quality. ` +
-        `Shop the full range from ${v}, available now.`;
-    }
-    if (suggestion.length > 160) suggestion = suggestion.slice(0, 157) + "…";
-    fixes.push({ label: "Suggested Meta Description", suggestion });
-  }
-
-  if (failed.has("Fewer than 5 tags")) {
-    const titlePhrase = titleWords.filter((w) => w.length > 2).join("-");
-    const typePhrase = type
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 2)
-      .join("-");
-    const singleWords = [title, vendor, type]
-      .join(" ")
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 2);
-    const existing = product.tags.map((t) =>
-      t.toLowerCase().replace(/\s+/g, "-"),
-    );
-    const candidates = [
-      ...existing,
-      ...(titlePhrase ? [titlePhrase] : []),
-      ...(typePhrase ? [typePhrase] : []),
-      ...singleWords,
-    ];
-    const seen = new Map<string, string>();
-    for (const c of candidates) {
-      const key = normalizeToken(c);
-      if (!seen.has(key)) seen.set(key, c);
-    }
-    const combined = [...seen.values()].slice(0, 7);
-    fixes.push({ label: "Suggested Tags", suggestion: combined.join(", ") });
-  }
-
-  if (failed.has("Description is missing or under 100 characters")) {
-    const v = vendor || "our brand";
-    const suggestion = typeIsRedundant
-      ? `The ${title} from ${v} is perfect for gifting and personal use. ` +
-        `Shop the full range from ${v}, available now.`
-      : `The ${title} from ${v} is a ${type.toLowerCase()} crafted for quality and everyday use. ` +
-        `Browse the full collection from ${v} and find exactly what you need, available now.`;
-    fixes.push({ label: "Suggested Product Description", suggestion });
-  }
-
-  return fixes;
-}
 
 const FIX_LABELS: Record<string, string> = {
   "Status is not Active": "Set product status to Active",
@@ -417,68 +300,6 @@ function capitalize(str: string) {
   return str.charAt(0) + str.slice(1).toLowerCase();
 }
 
-function normalizeForCompare(s: string): string {
-  return s.toLowerCase().replace(/[-\s]/g, "").replace(/[^\w]/g, "");
-}
-
-function hasRepeatedConcepts(s: string): boolean {
-  const tokens = s.split(/\s+/).map(normalizeForCompare).filter(Boolean);
-  const seen = new Set<string>();
-  for (const t of tokens) {
-    if (seen.has(t)) return true;
-    seen.add(t);
-  }
-  return false;
-}
-
-function countOccurrences(needle: string, haystack: string): number {
-  if (!needle) return 0;
-  let count = 0;
-  let pos = 0;
-  while ((pos = haystack.indexOf(needle, pos)) !== -1) {
-    count++;
-    pos += needle.length;
-  }
-  return count;
-}
-
-function isStrongImprovement(currentDisplay: string, suggested: string): boolean {
-  const trimSuggested = suggested.trim();
-  if (!trimSuggested) return false;
-  const current = currentDisplay === "(none)" ? "" : currentDisplay.trim();
-  const normSuggested = normalizeForCompare(trimSuggested);
-  const normCurrent = normalizeForCompare(current);
-  if (normSuggested === normCurrent) return false;
-  if (hasRepeatedConcepts(trimSuggested)) return false;
-  if (normCurrent && countOccurrences(normCurrent, normSuggested) > 1) return false;
-  if (current && trimSuggested.length < current.length) return false;
-  return true;
-}
-
-function getNewTags(currentDisplay: string, suggestedDisplay: string): string[] {
-  const currentNorm = new Set(
-    (currentDisplay === "(none)" ? [] : currentDisplay.split(","))
-      .map((t) => normalizeForCompare(t.trim()))
-      .filter(Boolean),
-  );
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const t of suggestedDisplay.split(",").map((t) => t.trim()).filter(Boolean)) {
-    const norm = normalizeForCompare(t);
-    if (!seen.has(norm)) {
-      seen.add(norm);
-      deduped.push(t);
-    }
-  }
-  return deduped.filter((t) => !currentNorm.has(normalizeForCompare(t)));
-}
-
-function toSlug(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\w-]/g, "");
-}
 
 interface AiPromptData {
   title: string;
@@ -554,72 +375,6 @@ export default function ProductDetail() {
     scores.listingQuality + pointsRecoverable,
     100,
   );
-  const generatedFixes = generateFixes(product, failedChecks);
-
-  const fixRows = generatedFixes.map((fix) => {
-    let key: string;
-    let currentValue: string;
-    switch (fix.label) {
-      case "Suggested Product Title":
-        key = "title";
-        currentValue = product.title || "(none)";
-        break;
-      case "Suggested SEO Title":
-        key = "seoTitle";
-        currentValue = product.seo?.title || "(none)";
-        break;
-      case "Suggested Meta Description":
-        key = "metaDesc";
-        currentValue = product.seo?.description || "(none)";
-        break;
-      case "Suggested Tags":
-        key = "tags";
-        currentValue =
-          product.tags.length > 0 ? product.tags.join(", ") : "(none)";
-        break;
-      case "Suggested Product Description": {
-        key = "description";
-        const stripped = stripHtml(product.descriptionHtml);
-        currentValue =
-          stripped.length > 0
-            ? stripped.length > 120
-              ? stripped.slice(0, 117) + "…"
-              : stripped
-            : "(none)";
-        break;
-      }
-      default:
-        key = fix.label;
-        currentValue = "(none)";
-    }
-    return { ...fix, key, currentValue };
-  });
-
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  type Step = "idle" | "confirming" | "done";
-  const [step, setStep] = useState<Step>("idle");
-
-  const toggleFix = (key: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-    setStep("idle");
-  };
-
-  const qualifiedRows = fixRows
-    .map((fix) => {
-      if (fix.key === "tags") {
-        const newTags = getNewTags(fix.currentValue, fix.suggestion);
-        if (newTags.length === 0) return null;
-        return { ...fix, suggestion: newTags.join(", ") };
-      }
-      return isStrongImprovement(fix.currentValue, fix.suggestion) ? fix : null;
-    })
-    .filter((fix): fix is NonNullable<typeof fix> => fix !== null);
-
   const aiFetcher = useFetcher<{ result?: AiSuggestionResult; error?: string }>();
   const aiResult = aiFetcher.data?.result ?? null;
   const aiError = aiFetcher.data?.error ?? null;
@@ -790,78 +545,9 @@ export default function ProductDetail() {
         </s-section>
       )}
 
-      {/* Generated Fixes */}
-      <s-section heading="Generated Fixes">
-        {qualifiedRows.length > 0 ? (
-          <s-stack direction="block" gap="base">
-            {qualifiedRows.map((fix) => (
-              <s-stack key={fix.key} direction="block" gap="small-200">
-                <s-stack direction="inline" gap="base">
-                  <input
-                    type="checkbox"
-                    id={fix.key}
-                    checked={selected.has(fix.key)}
-                    onChange={() => toggleFix(fix.key)}
-                  />
-                  <label htmlFor={fix.key}>{fix.label}</label>
-                </s-stack>
-                <s-stack direction="inline" gap="base">
-                  <s-text>Current:</s-text>
-                  <s-text>{fix.currentValue}</s-text>
-                </s-stack>
-                <s-stack direction="inline" gap="base">
-                  <s-text>Suggested:</s-text>
-                  <s-text>{fix.suggestion}</s-text>
-                </s-stack>
-              </s-stack>
-            ))}
 
-            <button
-              type="button"
-              disabled={selected.size === 0}
-              onClick={() => setStep("confirming")}
-            >
-              Apply Selected Fixes
-            </button>
-
-            {step === "confirming" && (
-              <s-stack direction="block" gap="base">
-                <s-banner tone="warning">
-                  <s-paragraph>
-                    You are about to update this product in Shopify. Only
-                    selected fields will be changed. This simulation does not
-                    modify Shopify yet.
-                  </s-paragraph>
-                </s-banner>
-                <button type="button" onClick={() => setStep("done")}>
-                  Confirm Simulation
-                </button>
-              </s-stack>
-            )}
-
-            {step === "done" && (
-              <s-banner tone="success">
-                <s-paragraph>
-                  Simulation complete. Selected fixes are ready to apply in a
-                  future write-enabled version.
-                </s-paragraph>
-              </s-banner>
-            )}
-
-            <s-text>
-              Preview suggestions only. No changes are made to Shopify until
-              approved.
-            </s-text>
-          </s-stack>
-        ) : generatedFixes.length > 0 ? (
-          <s-text>No high-confidence generated fixes available.</s-text>
-        ) : (
-          <s-text>No generated fixes needed.</s-text>
-        )}
-      </s-section>
-
-      {/* AI Suggestions Sandbox */}
-      <s-section heading="AI Suggestions Sandbox">
+      {/* AI Recommendations */}
+      <s-section heading="AI Recommendations">
         <s-stack direction="block" gap="base">
           <button
             type="button"
@@ -873,7 +559,7 @@ export default function ProductDetail() {
               );
             }}
           >
-            {aiLoading ? "Generating…" : "Generate AI Suggestions"}
+            {aiLoading ? "Generating…" : "Generate AI Recommendations"}
           </button>
 
           {aiError && (
@@ -886,8 +572,8 @@ export default function ProductDetail() {
             <s-stack direction="block" gap="base">
               <s-banner tone="info">
                 <s-paragraph>
-                  Suggestions generated by Claude AI. No changes have been made
-                  to your Shopify product.
+                  AI recommendations based on your product data. Review and
+                  approve any changes before applying them.
                 </s-paragraph>
               </s-banner>
 
