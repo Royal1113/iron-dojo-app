@@ -1,0 +1,94 @@
+# Iron Dojo — Replit Build Prompt (Milestone 1 ONLY)
+
+You are building "Iron Dojo," a Shopify app. This prompt covers **Milestone 1 only**. Build exactly what is specified below and nothing more. Do not anticipate future features. If something is in the OUT OF SCOPE list, do not build it even partially.
+
+## Objective
+
+Scaffold an **embedded** Shopify app from the **official Shopify React Router 7 template**, use the template's built-in authentication so it installs on my Shopify development store, read products from the connected store, and display them in an **Iron Dojo dashboard**.
+
+## Stack — use exactly this, do not substitute
+
+- The official Shopify App Template for **React Router 7** (do NOT use the legacy Remix template, and do NOT hand-roll a custom React/Express project).
+- `@shopify/shopify-app-react-router` (ships with the template).
+- Shopify **App Bridge** + **Polaris** (the template's default UI library) for the embedded admin UI.
+- **Prisma + SQLite** for session storage — this is the template default. Do NOT change the database, do NOT switch to Postgres, do NOT add tables.
+- **Shopify CLI** for local development (CLI dev flow with the automatic Cloudflare tunnel).
+- Node.js LTS.
+
+## Step 1 — Create the project via Shopify CLI init (do NOT scaffold anything manually first)
+
+The **first task** is to install the Shopify CLI if it is not already installed, then run the template init command. Do NOT create any files, folders, or project structure manually before running the CLI init — the CLI generates the entire project.
+
+1. If the Shopify CLI is not installed, install it: `npm i -g @shopify/cli@latest`
+2. Run:
+
+```
+shopify app init --template=https://github.com/Shopify/shopify-app-template-react-router
+```
+
+**Stop-and-report rule:** If the CLI prompts for any of the following — browser login, app selection, organization selection, or development store selection — **STOP and tell me exactly which prompt is waiting.** Do not attempt to answer, guess, skip, or work around these prompts. I will complete all interactive Shopify login/selection steps myself in the Replit shell.
+
+Only **after** the template project has been created (by me completing any interactive steps) do you proceed to the remaining steps. At that point your only code change for Milestone 1 is modifying the dashboard route (Step 5). Do not modify other template files unless required for scopes (Step 2).
+
+## Step 2 — Configure scopes
+
+In `shopify.app.toml`, set the access scopes to exactly:
+
+```
+read_products
+```
+
+Do not request any other scope. Do NOT write custom OAuth routes, custom token storage, or any custom auth code — the template's **managed installation + token exchange** handles authentication automatically.
+
+## Step 3 — Authentication (use the template, build nothing custom)
+
+Use the template's built-in `authenticate.admin` inside route loaders/actions to authenticate requests and obtain an authenticated Admin GraphQL client. Keep the template's default embedded configuration (`isEmbeddedApp: true` and the default embedded auth strategy) as shipped. Do not implement custom OAuth, custom session handling, or custom token logic of any kind.
+
+## Step 4 — Read products
+
+In the dashboard route's `loader`, use the authenticated Admin **GraphQL** client (`admin.graphql`) to query the store's products. Use the GraphQL Admin API, not REST. Fetch the first ~50 products and include at least these fields per product:
+
+- `id`
+- `title`
+- `status`
+- `totalInventory`
+- `featuredImage { url, altText }`
+- first variant's `price`
+
+## Step 5 — Iron Dojo dashboard
+
+Use the template's main embedded app route (`app/routes/app._index.tsx`) as the **Iron Dojo dashboard**, replacing the template's placeholder/demo content. The dashboard must:
+
+- Be clearly branded **"Iron Dojo"** in the page header/title.
+- Render the products from the loader in a Polaris data table or resource list, showing per product: thumbnail image, title, status, price, and inventory.
+- Show a product count (e.g., "Showing X products").
+- Show a clean empty state ("No products found") if the store has no products.
+
+Keep the UI minimal and clean. This dashboard is the only meaningful screen in Milestone 1.
+
+## Step 6 — Run
+
+The app runs via the Shopify CLI dev flow, which creates the tunnel and temporary HTTPS URL automatically and registers it with the app config:
+
+```
+shopify app dev
+```
+
+I will run this command and complete the install on the **IronDojo Testing** development store.
+
+## OUT OF SCOPE — do NOT build any of these in Milestone 1
+
+- No AI scoring, listing analysis, or optimization logic.
+- No Claude API or any LLM integration.
+- No billing, subscriptions, pricing tiers, or plan gating.
+- No Google Search Console integration.
+- No store graph / node–edge ingestion / graph schema.
+- No Postgres — keep SQLite + Prisma exactly as the template ships.
+- No custom OAuth — use the template's auth only.
+- No scopes beyond `read_products`.
+- No background jobs or `/jobs` workers.
+- No extra database tables beyond what the template includes.
+
+## Success condition
+
+Milestone 1 is complete when **Iron Dojo installs on the "IronDojo Testing" Shopify development store via the template's authentication, and the Iron Dojo dashboard displays the live product list pulled from that store.**
