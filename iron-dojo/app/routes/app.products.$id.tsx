@@ -331,6 +331,48 @@ function capitalize(str: string) {
   return str.charAt(0) + str.slice(1).toLowerCase();
 }
 
+function normalizeForCompare(s: string): string {
+  return s.toLowerCase().replace(/[-\s]/g, "").replace(/[^\w]/g, "");
+}
+
+function hasRepeatedConcepts(s: string): boolean {
+  const tokens = s.split(/\s+/).map(normalizeForCompare).filter(Boolean);
+  const seen = new Set<string>();
+  for (const t of tokens) {
+    if (seen.has(t)) return true;
+    seen.add(t);
+  }
+  return false;
+}
+
+function isStrongImprovement(currentDisplay: string, suggested: string): boolean {
+  const trimSuggested = suggested.trim();
+  if (!trimSuggested) return false;
+  const current = currentDisplay === "(none)" ? "" : currentDisplay.trim();
+  if (normalizeForCompare(trimSuggested) === normalizeForCompare(current)) return false;
+  if (hasRepeatedConcepts(trimSuggested)) return false;
+  if (current && trimSuggested.length < current.length) return false;
+  return true;
+}
+
+function getNewTags(currentDisplay: string, suggestedDisplay: string): string[] {
+  const currentNorm = new Set(
+    (currentDisplay === "(none)" ? [] : currentDisplay.split(","))
+      .map((t) => normalizeForCompare(t.trim()))
+      .filter(Boolean),
+  );
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const t of suggestedDisplay.split(",").map((t) => t.trim()).filter(Boolean)) {
+    const norm = normalizeForCompare(t);
+    if (!seen.has(norm)) {
+      seen.add(norm);
+      deduped.push(t);
+    }
+  }
+  return deduped.filter((t) => !currentNorm.has(normalizeForCompare(t)));
+}
+
 export default function ProductDetail() {
   const data = useLoaderData<typeof loader>();
 
@@ -422,6 +464,17 @@ export default function ProductDetail() {
     });
     setStep("idle");
   };
+
+  const qualifiedRows = fixRows
+    .map((fix) => {
+      if (fix.key === "tags") {
+        const newTags = getNewTags(fix.currentValue, fix.suggestion);
+        if (newTags.length === 0) return null;
+        return { ...fix, suggestion: newTags.join(", ") };
+      }
+      return isStrongImprovement(fix.currentValue, fix.suggestion) ? fix : null;
+    })
+    .filter((fix): fix is NonNullable<typeof fix> => fix !== null);
 
   return (
     <s-page heading={product.title}>
@@ -590,9 +643,9 @@ export default function ProductDetail() {
 
       {/* Generated Fixes */}
       <s-section heading="Generated Fixes">
-        {fixRows.length > 0 ? (
+        {qualifiedRows.length > 0 ? (
           <s-stack direction="block" gap="base">
-            {fixRows.map((fix) => (
+            {qualifiedRows.map((fix) => (
               <s-stack key={fix.key} direction="block" gap="small-200">
                 <s-stack direction="inline" gap="base">
                   <input
@@ -651,6 +704,8 @@ export default function ProductDetail() {
               approved.
             </s-text>
           </s-stack>
+        ) : generatedFixes.length > 0 ? (
+          <s-text>No high-confidence generated fixes available.</s-text>
         ) : (
           <s-text>No generated fixes needed.</s-text>
         )}
