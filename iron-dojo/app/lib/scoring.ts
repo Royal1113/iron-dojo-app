@@ -109,3 +109,13 @@ export function revOpportunityLabel(score: number): string {
   if (score >= 50) return "Moderate opportunity";
   return "Low opportunity";
 }
+
+export const PLAN_LIMITS = {
+  FREE: 5,
+  STARTER: 25,
+  PRO: Infinity,
+} as const;
+
+export type Plan = keyof typeof PLAN_LIMITS;
+
+export const CURRENT_PLAN: Plan = "FREE";

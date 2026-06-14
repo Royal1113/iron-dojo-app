@@ -7,6 +7,8 @@ import {
   scoreTone,
   revOpportunityTone,
   revOpportunityLabel,
+  PLAN_LIMITS,
+  CURRENT_PLAN,
 } from "../lib/scoring";
 
 const PRODUCT_DETAIL_QUERY = `#graphql
@@ -50,6 +52,43 @@ const PRODUCT_DETAIL_QUERY = `#graphql
   }
 `;
 
+const PRODUCTS_GATE_QUERY = `#graphql
+  query IronDojoProductsGate {
+    products(first: 50) {
+      edges {
+        node {
+          id
+          status
+          totalInventory
+          productType
+          vendor
+          title
+          descriptionHtml
+          tags
+          images(first: 3) {
+            edges {
+              node {
+                url
+              }
+            }
+          }
+          variants(first: 1) {
+            edges {
+              node {
+                price
+              }
+            }
+          }
+          seo {
+            title
+            description
+          }
+        }
+      }
+    }
+  }
+`;
+
 type ProductImage = { url: string; altText: string | null };
 type Variant = {
   id: string;
@@ -73,24 +112,71 @@ type ProductDetail = {
   seo: { title: string | null; description: string | null } | null;
 };
 
+type GateProduct = {
+  id: string;
+  status: string;
+  totalInventory: number | null;
+  productType: string;
+  vendor: string;
+  title: string;
+  descriptionHtml: string;
+  tags: string[];
+  images: { edges: unknown[] };
+  variants: { edges: { node: { price: string } }[] };
+  seo: { title: string | null; description: string | null } | null;
+};
+
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
 
   const rawId = `gid://shopify/Product/${params.id ?? ""}`;
 
-  const response = await admin.graphql(PRODUCT_DETAIL_QUERY, {
-    variables: { id: rawId },
-  });
-  const json = await response.json();
-  const product: ProductDetail | null = json.data?.product ?? null;
+  const [detailResponse, gateResponse] = await Promise.all([
+    admin.graphql(PRODUCT_DETAIL_QUERY, { variables: { id: rawId } }),
+    admin.graphql(PRODUCTS_GATE_QUERY),
+  ]);
+  const [detailJson, gateJson] = await Promise.all([
+    detailResponse.json(),
+    gateResponse.json(),
+  ]);
+
+  const product: ProductDetail | null = detailJson.data?.product ?? null;
 
   if (!product) {
     throw new Response("Product not found", { status: 404 });
   }
 
-  const scores = scoreProduct(product);
+  const limit = PLAN_LIMITS[CURRENT_PLAN];
+  const allGate: GateProduct[] = (
+    gateJson.data?.products?.edges ?? []
+  ).map((e: { node: GateProduct }) => e.node);
 
-  return { product, scores };
+  const visibleIds = new Set(
+    allGate
+      .map((p) => ({ id: p.id, lq: scoreProduct(p).listingQuality }))
+      .sort((a, b) => a.lq - b.lq)
+      .slice(0, Number.isFinite(limit) ? limit : undefined)
+      .map((p) => p.id),
+  );
+
+  if (!visibleIds.has(product.id)) {
+    return {
+      locked: true as const,
+      limit,
+      plan: CURRENT_PLAN,
+      product: null,
+      scores: null,
+    };
+  }
+
+  const scores = scoreProduct(product);
+  return {
+    locked: false as const,
+    product,
+    scores,
+    limit,
+    plan: CURRENT_PLAN,
+  };
 };
 
 function statusTone(
@@ -113,7 +199,31 @@ function capitalize(str: string) {
 }
 
 export default function ProductDetail() {
-  const { product, scores } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+
+  if (data.locked) {
+    return (
+      <s-page heading="Iron Dojo">
+        <s-link slot="breadcrumb-actions" href="/app">
+          Products
+        </s-link>
+        <s-section heading="Upgrade Required">
+          <s-banner tone="warning">
+            <s-paragraph>
+              This product is outside your current plan limit.
+            </s-paragraph>
+            <s-paragraph>
+              Your {data.plan} plan shows the {data.limit} lowest-scoring
+              products. Upgrade to STARTER to see 25 products, or PRO for
+              unlimited access.
+            </s-paragraph>
+          </s-banner>
+        </s-section>
+      </s-page>
+    );
+  }
+
+  const { product, scores } = data;
 
   const variants = product.variants.edges.map((e) => e.node);
   const images = product.images.edges.map((e) => e.node);

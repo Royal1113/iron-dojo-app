@@ -1,0 +1,1 @@
+- [Iron Dojo plan gating](iron-dojo-plan-gating.md) — CURRENT_PLAN constant in scoring.ts; flip to change tier; s-banner only accepts warning/info/success/critical/auto (not caution)

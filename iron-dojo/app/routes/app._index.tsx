@@ -6,6 +6,8 @@ import {
   scoreProduct,
   scoreTone,
   revOpportunityTone,
+  PLAN_LIMITS,
+  CURRENT_PLAN,
 } from "../lib/scoring";
 
 const PRODUCTS_QUERY = `#graphql
@@ -74,11 +76,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     json.data?.products?.edges ?? []
   ).map((edge: { node: Product }) => edge.node);
 
-  const products = raw
+  const limit = PLAN_LIMITS[CURRENT_PLAN];
+
+  const sorted = raw
     .map((p) => ({ ...p, scores: scoreProduct(p) }))
     .sort((a, b) => a.scores.listingQuality - b.scores.listingQuality);
 
-  return { products };
+  const visibleProducts = Number.isFinite(limit)
+    ? sorted.slice(0, limit)
+    : sorted;
+
+  return {
+    visibleProducts,
+    totalCount: sorted.length,
+    limit,
+    plan: CURRENT_PLAN,
+  };
 };
 
 function statusTone(
@@ -101,8 +114,9 @@ function capitalize(str: string) {
 }
 
 export default function IronDojoDashboard() {
-  const { products } = useLoaderData<typeof loader>();
-  const count = products.length;
+  const { visibleProducts, totalCount, limit } =
+    useLoaderData<typeof loader>();
+  const count = visibleProducts.length;
 
   return (
     <s-page heading="Iron Dojo">
@@ -129,7 +143,7 @@ export default function IronDojoDashboard() {
               <s-table-header>Issues</s-table-header>
             </s-table-header-row>
             <s-table-body>
-              {products.map((product) => {
+              {visibleProducts.map((product) => {
                 const price = product.variants.edges[0]?.node.price ?? "—";
                 const issueCount = product.scores.checks.filter(
                   (c) => !c.passed,
@@ -192,6 +206,12 @@ export default function IronDojoDashboard() {
               })}
             </s-table-body>
           </s-table>
+          {totalCount > count ? (
+            <s-paragraph>
+              Showing {count} of {totalCount} products. Upgrade to unlock
+              the full opportunity queue.
+            </s-paragraph>
+          ) : null}
         </s-section>
       )}
     </s-page>
