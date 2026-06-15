@@ -1,0 +1,83 @@
+Create a launch-readiness plan for installing Iron Dojo on a real customer Shopify store.
+
+Do not change code yet.
+
+Goal:
+Identify what Iron Dojo needs before it can safely be used by a real Shopify merchant.
+
+Include:
+
+1. Technical requirements
+
+* Shopify app must install on a real merchant store.
+* Required scopes must be documented.
+* OAuth/install flow must work.
+* App URL and redirect URLs must be correct for production.
+* Replit environment variables/secrets must be complete.
+* ANTHROPIC_API_KEY must be configured.
+* Shopify API keys/secrets must be configured.
+* Database must be production-safe or clearly marked as temporary.
+* App must survive restart/redeploy without losing required store data.
+
+2. Merchant/customer procedure
+   Write this as simple steps:
+
+* Merchant receives install link.
+* Merchant approves Shopify permissions.
+* Iron Dojo opens inside Shopify.
+* Merchant reviews Opportunity Queue.
+* Merchant opens one product.
+* Merchant generates AI recommendations.
+* Merchant reviews suggestions.
+* Merchant selects only the changes they want.
+* Merchant clicks Apply.
+* Merchant confirms changes in Shopify.
+* Merchant can manually undo edits in Shopify admin.
+
+3. Safety rules for first real customer
+
+* Start with one low-risk product.
+* Prefer tags-only test first.
+* Do not edit best-selling products first.
+* Do not apply all recommendations blindly.
+* Confirm tags merge instead of replace.
+* Confirm no unrelated product changes.
+* Confirm merchant knows manual undo is in Shopify admin.
+
+4. Launch blockers
+   List anything that would block real customer testing, such as:
+
+* install flow fails
+* OAuth errors
+* product list fails to load
+* AI generation fails
+* writeback fails
+* app loses store/session data after restart
+* permissions/scopes mismatch
+* customer cannot understand the apply flow
+* no safe revert process
+
+5. Non-blockers for beta
+   List things that can wait:
+
+* billing
+* tier gates
+* collection writeback
+* bulk audit
+* Search Console
+* Bing
+* automation jobs
+* polished marketing site
+* full App Store listing
+
+6. Customer-facing explanation
+   Draft a simple beta explanation:
+   “Iron Dojo reviews your Shopify products, finds weak listings, suggests better titles, SEO, tags, descriptions, and collections, then lets you choose which updates to apply. It does not automatically change anything unless you approve it.”
+
+Return:
+
+* Real-store launch checklist.
+* Merchant onboarding steps.
+* First-customer safety procedure.
+* Blockers vs non-blockers.
+* Do not code yet.
