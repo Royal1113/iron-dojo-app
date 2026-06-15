@@ -1,0 +1,77 @@
+Plan M18 only. Do not build yet.
+
+Goal:
+Create a product context router for AI recommendations so Claude uses different instructions depending on the product type.
+
+Current problem:
+The AI prompt is too generic. Gift cards, standard physical products, service/custom-build products, apparel, digital products, and dropshipping products should not all use the same recommendation rules.
+
+M18 scope:
+Build the router framework now, but only implement two active branches:
+1. gift_card
+2. standard_product
+
+Do not implement apparel, digital, service, dropship, subscription, or other branches yet. Leave placeholders/comments for later if helpful.
+
+Do not change Shopify writeback.
+Do not change productUpdate.
+Do not change scoring.
+Do not change batch gating.
+Do not change scopes.
+Do not modify product.vendor.
+Do not add vendor writeback.
+Do not add database tables.
+Do not add billing.
+Do not build yet.
+
+Requirements:
+1. Add a product context classifier.
+2. The classifier should inspect:
+   - product.title
+   - product.productType
+   - product.tags
+   - product.vendor
+   - shopName if useful
+
+3. It should return a productContext value such as:
+   - "gift_card"
+   - "standard_product"
+
+4. Gift card detection should catch:
+   - productType containing giftcard, gift card, or gift cards
+   - title containing gift card
+   - tags containing gift-card, giftcard, gift cards
+
+5. Add productContext to AiPromptData.
+
+6. Update buildAiPrompt() to include productContext.
+
+7. Update the Claude prompt to include:
+   Product Context: gift_card or standard_product
+
+8. Add context-specific prompt rules:
+
+For gift_card:
+- Treat this as a gift card first, not as the underlying merchandise.
+- Do not describe the gift card as physical equipment.
+- Focus on gifting, recipient choice, redemption, flexibility, convenience, and available denominations.
+- Titles should preserve “Gift Card” clearly.
+- Tags should include gift-card and gifting-related terms, not equipment-only tags.
+- Avoid claims about product performance, materials, durability, or technical specs.
+
+For standard_product:
+- Optimize as a normal Shopify product.
+- Focus on product benefits, use cases, buyer intent, SEO clarity, and conversion.
+- Do not invent specs, materials, measurements, warranties, or claims not present in the product data.
+
+9. Keep existing vendor/shop-name rules from the prior prompt fix.
+
+10. Before editing, show:
+- files to modify
+- exact classifier logic
+- exact productContext values
+- exact gift_card rules
+- exact standard_product rules
+- where productContext enters AiPromptData
+- where productContext enters the Claude prompt
+- expected before/after behavior for the Gift Card product
