@@ -10,7 +10,13 @@ Collection recommendations (M19) are visible to all tiers during development so 
 ## Future tier behavior
 
 - **Top tier / dev mode**: show full collection/category suggestions (names + reasons).
-- **Lower tiers**: show a locked teaser only — e.g. *"Collection recommendations are available on Growth and Pro plans."* Do NOT show actual collection names or reasons (merchant could copy/paste them manually to bypass the gate).
+- **Lower tiers**: show a locked teaser only — e.g. *"Collection recommendations are available on Growth and higher plans."* Do NOT show actual collection names or reasons (merchant could copy/paste them manually to bypass the gate).
+
+## Tier model (accepted)
+
+FREE → STARTER → GROWTH → SCALE → ENTERPRISE / WHITE GLOVE
+
+Do NOT use "Pro" in locked messages or tier names. That tier name was retired.
 
 ## Implementation order when tier gating is added
 
@@ -20,6 +26,6 @@ Collection recommendations (M19) are visible to all tiers during development so 
 
 **Why:** The feature set must be stable and verified before locking it. Showing actual names/reasons to lower tiers would let merchants bypass the paywall manually.
 
-## Current state
+## Current development rule
 
-`CURRENT_PLAN` in `scoring.ts` is the single flip-switch for tier (FREE=5, STARTER=25, PRO=Infinity). During development it is set to top tier, so all features including collections are visible.
+App runs effectively top-tier/unlocked while building and verifying features. `CURRENT_PLAN` in `scoring.ts` is the single flip-switch.

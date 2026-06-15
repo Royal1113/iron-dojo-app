@@ -1,3 +1,4 @@
 - [Iron Dojo plan gating](iron-dojo-plan-gating.md) — CURRENT_PLAN constant in scoring.ts; flip to change tier; s-banner only accepts warning/info/success/critical/auto (not caution)
 - [Iron Dojo action pattern](iron-dojo-action.md) — dual-intent action via FormData `intent` field; applyRecommendations + generateAi share one route action
-- [Iron Dojo collection tier gating](iron-dojo-collection-tier-gating.md) — collection suggestions visible in dev; lower tiers get teaser only (no names/reasons); gate display layer before writeback
+- [Iron Dojo collection tier gating](iron-dojo-collection-tier-gating.md) — teaser says "Growth and higher plans" (never "Pro"); gate display before writeback; dev stays unlocked
+- [Iron Dojo feature tier plan](iron-dojo-feature-tier-plan.md) — ACCEPTED tier model FREE→STARTER→GROWTH→SCALE→ENTERPRISE; features.ts architecture; four permission axes
