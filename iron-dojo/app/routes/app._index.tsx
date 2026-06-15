@@ -211,6 +211,55 @@ export default function IronDojoDashboard() {
   const count = visibleProducts.length;
   const hasLimit = Number.isFinite(limit);
 
+  // ── M20: Store-level analytics (all derived from existing visibleProducts) ──
+
+  const avgListingQuality =
+    count === 0
+      ? 0
+      : Math.round(
+          visibleProducts.reduce((sum, p) => sum + p.scores.listingQuality, 0) /
+            count,
+        );
+
+  const avgRevenueOpportunity =
+    count === 0
+      ? 0
+      : Math.round(
+          visibleProducts.reduce(
+            (sum, p) => sum + p.scores.revenueOpportunity,
+            0,
+          ) / count,
+        );
+
+  const activeCount = visibleProducts.filter(
+    (p) => p.status === "ACTIVE",
+  ).length;
+  const draftCount = visibleProducts.filter(
+    (p) => p.status === "DRAFT",
+  ).length;
+  const archivedCount = visibleProducts.filter(
+    (p) => p.status === "ARCHIVED",
+  ).length;
+  const criticalCount = visibleProducts.filter(
+    (p) => p.scores.listingQuality < 50,
+  ).length;
+
+  const issueMap = new Map<string, number>();
+  for (const p of visibleProducts) {
+    for (const check of p.scores.checks) {
+      if (!check.passed) {
+        issueMap.set(check.label, (issueMap.get(check.label) ?? 0) + 1);
+      }
+    }
+  }
+  const topIssues = [...issueMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  const priorityProducts = [...visibleProducts]
+    .sort((a, b) => a.scores.listingQuality - b.scores.listingQuality)
+    .slice(0, 5);
+
   const batchCompleteMessage =
     plan === "PRO"
       ? "Your entire catalog is fully optimized."
@@ -230,6 +279,135 @@ export default function IronDojoDashboard() {
           <s-paragraph>{batchCompleteMessage}</s-paragraph>
         </s-banner>
       ) : null}
+
+      {/* ── M20: Store Health ── */}
+      {count > 0 ? (
+        <s-section heading="Store Health">
+          <s-stack direction="block" gap="base">
+            <s-stack direction="inline" gap="base">
+              <s-stack direction="block" gap="small-200">
+                <s-text>Store Health Score</s-text>
+                <s-badge tone={scoreTone(avgListingQuality)}>
+                  {avgListingQuality}/100
+                </s-badge>
+              </s-stack>
+              <s-stack direction="block" gap="small-200">
+                <s-text>Revenue Opportunity Average</s-text>
+                <s-badge tone={revOpportunityTone(avgRevenueOpportunity)}>
+                  {avgRevenueOpportunity}/100
+                </s-badge>
+              </s-stack>
+            </s-stack>
+            <s-stack direction="inline" gap="base">
+              <s-stack direction="block" gap="small-200">
+                <s-text>Total assigned</s-text>
+                <s-text>{count}</s-text>
+              </s-stack>
+              <s-stack direction="block" gap="small-200">
+                <s-text>Active</s-text>
+                <s-badge tone="success">{activeCount}</s-badge>
+              </s-stack>
+              {draftCount > 0 ? (
+                <s-stack direction="block" gap="small-200">
+                  <s-text>Draft</s-text>
+                  <s-badge tone="warning">{draftCount}</s-badge>
+                </s-stack>
+              ) : null}
+              {archivedCount > 0 ? (
+                <s-stack direction="block" gap="small-200">
+                  <s-text>Archived</s-text>
+                  <s-badge tone="neutral">{archivedCount}</s-badge>
+                </s-stack>
+              ) : null}
+              {criticalCount > 0 ? (
+                <s-stack direction="block" gap="small-200">
+                  <s-text>Critical issues</s-text>
+                  <s-badge tone="critical">{criticalCount}</s-badge>
+                </s-stack>
+              ) : null}
+            </s-stack>
+            {plan !== "PRO" ? (
+              <s-paragraph>
+                You are viewing your assigned {plan} batch. Upgrade to unlock
+                more products.
+              </s-paragraph>
+            ) : null}
+          </s-stack>
+        </s-section>
+      ) : null}
+
+      {/* ── M20: Top Issues ── */}
+      {topIssues.length > 0 ? (
+        <s-section heading="Top Issues">
+          <s-table>
+            <s-table-header-row>
+              <s-table-header>Issue</s-table-header>
+              <s-table-header>Products affected</s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {topIssues.map(([label, affectedCount]) => (
+                <s-table-row key={label}>
+                  <s-table-cell>
+                    <s-text>{label}</s-text>
+                  </s-table-cell>
+                  <s-table-cell>
+                    <s-badge
+                      tone={
+                        affectedCount === count
+                          ? "critical"
+                          : affectedCount >= Math.ceil(count / 2)
+                          ? "warning"
+                          : "neutral"
+                      }
+                    >
+                      {affectedCount}/{count}
+                    </s-badge>
+                  </s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+        </s-section>
+      ) : null}
+
+      {/* ── M20: Fix These First ── */}
+      {priorityProducts.length > 0 && !batchComplete ? (
+        <s-section heading="Fix These First">
+          <s-table>
+            <s-table-header-row>
+              <s-table-header>Product</s-table-header>
+              <s-table-header>Listing Quality</s-table-header>
+              <s-table-header>Top Issue</s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {priorityProducts.map((p) => {
+                const topIssueLabel =
+                  p.scores.checks.find((c) => !c.passed)?.label ?? "None";
+                return (
+                  <s-table-row key={p.id}>
+                    <s-table-cell>
+                      <s-link
+                        href={`/app/products/${p.id.split("/").pop()}`}
+                      >
+                        {p.title}
+                      </s-link>
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-badge tone={scoreTone(p.scores.listingQuality)}>
+                        {p.scores.listingQuality}/100
+                      </s-badge>
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-text>{topIssueLabel}</s-text>
+                    </s-table-cell>
+                  </s-table-row>
+                );
+              })}
+            </s-table-body>
+          </s-table>
+        </s-section>
+      ) : null}
+
       {count === 0 ? (
         <s-section heading="Opportunity Queue">
           <s-heading>No products found</s-heading>

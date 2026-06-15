@@ -1,0 +1,84 @@
+Begin M20.
+
+Goal:
+Add a store-level optimization dashboard to Iron Dojo.
+
+Purpose:
+The dashboard should summarize the health of the merchant’s assigned product batch and show where the biggest optimization opportunities are across the store.
+
+Scope:
+Start with read-only analytics. Do not add writeback, billing, tier locks, database changes, or automated jobs.
+
+Inspect first:
+
+* app/routes/app._index.tsx or the current dashboard route
+* app/lib/scoring.ts
+* any existing loader that fetches products for the Opportunity Queue
+
+M20 should add:
+
+1. Store Health Score
+
+   * Average listing quality score across the currently assigned batch.
+   * Display as X/100.
+
+2. Revenue Opportunity Average
+
+   * Average revenue opportunity score across the assigned batch.
+   * Display as X/100.
+
+3. Product Counts
+
+   * Total assigned products.
+   * Active products.
+   * Archived/draft products if available.
+   * Products with critical issues.
+
+4. Top Issue Breakdown
+
+   * Count how many products have each top issue.
+   * Show the top 3–5 issue categories.
+
+5. Priority Summary
+
+   * “Fix these first” list using the existing assigned batch.
+   * Should use the same products already visible in Opportunity Queue.
+   * Do not create a new product assignment system.
+
+6. Upgrade Framing
+
+   * If the merchant is on FREE/limited batch, show simple text:
+     “You are viewing your assigned FREE batch. Upgrade to unlock more products.”
+   * Do not implement billing.
+
+Rules:
+
+* Use existing scoring logic.
+* Use existing assigned batch logic.
+* Do not change product scoring.
+* Do not change batch gating.
+* Do not change ProductBatch behavior.
+* Do not add Prisma/database tables.
+* Do not change Shopify writeback.
+* Do not change productUpdate.
+* Do not change scopes.
+* Do not add billing.
+* Do not add feature locks.
+* Do not add background jobs.
+* Do not call Claude/Anthropic for M20.
+* Keep M20 deterministic and cheap.
+
+Before editing:
+
+1. Identify the current dashboard route.
+2. Identify where assigned products are fetched.
+3. Identify existing score fields available per product.
+4. Propose the smallest safe patch.
+
+Then implement M20 only and show the diff.
+
+After implementation:
+
+* Run TypeScript validation.
+* Confirm the old known s-app-nav issue is unchanged if it still appears.
+* Summarize exactly what changed.
