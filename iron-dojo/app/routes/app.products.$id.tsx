@@ -284,7 +284,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       `Current SEO Description: ${promptData.seoDescription || "(none)"}`,
       "",
       "Return a JSON object with exactly these keys:",
-      '{ "title": "<compelling title, max 80 chars>", "seoTitle": "<SEO title, max 60 chars>", "metaDescription": "<meta description, max 160 chars>", "tags": ["<kebab-case tag>"], "description": "<2-3 sentence product description>" }',
+      '{ "title": "<compelling title, max 80 chars>", "seoTitle": "<SEO title, max 60 chars>", "metaDescription": "<meta description, max 160 chars>", "tags": ["<kebab-case tag>"], "description": "<2-3 sentence product description>", "suggestedCollections": [{"name": "<collection name>", "reason": "<one sentence reason>"}] }',
+      "suggestedCollections: recommend 3-5 Shopify collections or categories this product belongs in. If an obvious collection is missing (e.g. a snowboard with no 'Snowboards' collection), flag it. Each entry must have a name and a one-sentence reason.",
     ].join("\n");
 
     const message = await client.messages.create({
@@ -313,6 +314,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         "- Optimize as a normal Shopify product listing.",
         "- Focus on product benefits, use cases, buyer intent, SEO clarity, and conversion.",
         "- Do not invent specs, materials, measurements, warranties, or claims not present in the product data.",
+        "",
+        "Collection recommendation rules:",
+        "- Recommend 3–5 Shopify collections this product belongs in, based on its title, type, tags, and description.",
+        "- Prefer specific, merchant-useful names (e.g. 'Snowboards', 'Winter Sports', 'Sale Items', 'New Arrivals').",
+        "- If an obvious collection is clearly missing (e.g. a snowboard not in a 'Snowboards' collection), flag it with a reason starting with 'Missing:'.",
+        "- For gift cards, recommend collections like 'Gift Cards', 'Gifts', 'Store Credit' — never physical product categories.",
+        "- Keep each reason to one sentence. Do not invent brand names in reasons.",
       ].join("\n"),
       messages: [{ role: "user", content: promptText }],
     });
@@ -375,12 +383,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { error: "AI recommendation rejected by quality gate." };
     }
 
+    const rawCollections = Array.isArray(p.suggestedCollections)
+      ? (p.suggestedCollections as unknown[])
+      : [];
+    const suggestedCollections: CollectionSuggestion[] = rawCollections
+      .filter(
+        (c): c is { name: string; reason: string } =>
+          typeof c === "object" &&
+          c !== null &&
+          typeof (c as Record<string, unknown>).name === "string" &&
+          typeof (c as Record<string, unknown>).reason === "string" &&
+          ((c as Record<string, unknown>).name as string).trim().length > 0,
+      )
+      .map((c) => ({
+        name: c.name.trim(),
+        reason: c.reason.trim(),
+      }))
+      .slice(0, 5);
+
     const result: AiSuggestionResult = {
       title,
       seoTitle,
       metaDescription,
       tags: cleanedTags,
       description,
+      suggestedCollections,
     };
 
     return { result };
@@ -526,12 +553,18 @@ function buildAiPrompt(
   };
 }
 
+export interface CollectionSuggestion {
+  name: string;
+  reason: string;
+}
+
 export interface AiSuggestionResult {
   title: string;
   seoTitle: string;
   metaDescription: string;
   tags: string[];
   description: string;
+  suggestedCollections: CollectionSuggestion[];
 }
 
 export default function ProductDetail() {
@@ -862,6 +895,23 @@ export default function ProductDetail() {
                   </s-stack>
                 </s-stack>
               ))}
+
+              {aiResult.suggestedCollections.length > 0 && (
+                <s-stack direction="block" gap="small-200">
+                  <s-stack direction="inline" gap="base">
+                    <s-text>Suggested Collections</s-text>
+                    <s-badge tone="info">Advisory — not applied automatically</s-badge>
+                  </s-stack>
+                  {aiResult.suggestedCollections.map(({ name, reason }) => (
+                    <s-stack key={name} direction="block" gap="small-200">
+                      <s-stack direction="inline" gap="base">
+                        <s-badge tone="neutral">{name}</s-badge>
+                      </s-stack>
+                      <s-text>{reason}</s-text>
+                    </s-stack>
+                  ))}
+                </s-stack>
+              )}
 
               <button
                 type="button"
