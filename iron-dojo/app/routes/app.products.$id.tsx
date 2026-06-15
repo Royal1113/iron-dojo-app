@@ -274,6 +274,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     const promptText = [
       `Shop Name: ${promptData.shopName}`,
+      `Product Context: ${promptData.productContext}`,
       `Product Title: ${promptData.title}`,
       `Vendor (internal field, may be generic or test data): ${promptData.vendor}`,
       `Product Type: ${promptData.productType}`,
@@ -298,6 +299,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         "- If the vendor looks like a real, recognisable brand, you may reference it naturally.",
         "- If the vendor looks generic, internal, or test-like, do NOT use it in customer-facing copy. Use neutral product language instead (e.g. 'this board', 'the product', 'this item').",
         "- You may use the Shop Name as light attribution only if it reads naturally as a real business name. Never include the shop name in tags.",
+        "",
+        "Product context rules:",
+        "If Product Context is \"gift_card\":",
+        "- Treat this as a gift card, not as the underlying merchandise.",
+        "- Do not describe it as physical equipment, gear, or a performance product.",
+        "- Focus on gifting, recipient choice, redemption, flexibility, convenience, and available denominations.",
+        "- Titles must preserve the words 'Gift Card' clearly.",
+        "- Tags must include gift-card and gifting-related terms, not equipment or sport-specific tags.",
+        "- Avoid claims about performance, materials, durability, fit, or technical specifications.",
+        "",
+        "If Product Context is \"standard_product\":",
+        "- Optimize as a normal Shopify product listing.",
+        "- Focus on product benefits, use cases, buyer intent, SEO clarity, and conversion.",
+        "- Do not invent specs, materials, measurements, warranties, or claims not present in the product data.",
       ].join("\n"),
       messages: [{ role: "user", content: promptText }],
     });
@@ -448,10 +463,38 @@ function capitalize(str: string) {
 }
 
 
+type ProductContext = "gift_card" | "standard_product";
+// Future branches (not implemented): "apparel" | "digital" | "service" | "dropship" | "subscription"
+
+function classifyProductContext(product: {
+  title: string;
+  productType: string;
+  tags: string[];
+}): ProductContext {
+  const title = product.title.toLowerCase();
+  const type = product.productType.toLowerCase().replace(/[\s_-]/g, "");
+  const tags = product.tags.map((t) => t.toLowerCase().replace(/[\s_]/g, "-"));
+
+  if (
+    ["giftcard", "giftcards"].includes(type) ||
+    title.includes("gift card") ||
+    tags.some((t) =>
+      ["gift-card", "giftcard", "gift-cards", "giftcards"].includes(t),
+    )
+  ) {
+    return "gift_card";
+  }
+
+  // TODO: future branches — apparel, digital, service, dropship, subscription
+
+  return "standard_product";
+}
+
 interface AiPromptData {
   title: string;
   vendor: string;
   shopName: string;
+  productContext: ProductContext;
   productType: string;
   tags: string[];
   description: string;
@@ -474,6 +517,7 @@ function buildAiPrompt(
     title: product.title,
     vendor: product.vendor,
     shopName,
+    productContext: classifyProductContext(product),
     productType: product.productType,
     tags: product.tags,
     description: stripHtml(product.descriptionHtml),
