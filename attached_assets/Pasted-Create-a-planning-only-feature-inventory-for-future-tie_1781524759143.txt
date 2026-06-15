@@ -1,0 +1,73 @@
+Create a planning-only feature inventory for future tier gating.
+
+Important:
+Do not change app behavior.
+Do not add billing.
+Do not add gates.
+Do not add Google Search Console.
+Do not add Bing Webmaster Tools.
+Do not change Anthropic/Claude API usage.
+Currently Anthropic is only used for AI suggestions to update Shopify product listings.
+
+Goal:
+Create a durable internal plan that will make future tier gating easier and safer.
+
+Task:
+Inspect the current app and produce a feature inventory document only.
+
+Include:
+
+1. Every visible section/action currently in the app.
+2. Every current feature that may later be gated by tier.
+3. Future features we have discussed but are not building yet:
+
+   * collection/category apply
+   * bulk audit
+   * store-wide optimization
+   * competitor analysis
+   * trouble/feedback button
+   * Google Search Console connection
+   * Google URL/indexing submission
+   * Google performance monitoring
+   * Bing Webmaster Tools connection
+   * Bing URL/indexing submission
+   * automated optimization jobs
+   * white-glove/enterprise support
+
+Proposed future tiers:
+
+* FREE
+* STARTER
+* GROWTH
+* SCALE
+* ENTERPRISE / WHITE GLOVE
+
+Important tiering principle:
+Tiers should eventually be driven mainly by capability, not only by product count. Product limits can stay for now as an MVP safety control, but future gating should separate:
+
+* max assigned products
+* visible features
+* apply/writeback permissions
+* automation permissions
+* external integrations
+
+Recommend a future gating structure only, such as:
+
+* app/lib/features.ts
+* FEATURE_KEYS
+* PLAN_FEATURES
+* PLAN_LIMITS
+* canUseFeature(plan, featureKey)
+* getLockedMessage(featureKey)
+
+Architecture guidance:
+
+* Gate display separately from writeback.
+* Never rely only on hidden UI for permissions.
+* Later, validate permissions inside actions before Shopify writeback.
+* Keep dev/top-tier mode fully unlocked until launch.
+* Do not scatter plan checks across random components.
+* Do not implement any of this yet.
+
+Deliverable:
+Return a concise feature inventory and tier-gating plan. No code changes unless I explicitly approve them.
