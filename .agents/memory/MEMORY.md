@@ -1,2 +1,3 @@
 - [Iron Dojo plan gating](iron-dojo-plan-gating.md) — CURRENT_PLAN constant in scoring.ts; flip to change tier; s-banner only accepts warning/info/success/critical/auto (not caution)
 - [Iron Dojo action pattern](iron-dojo-action.md) — dual-intent action via FormData `intent` field; applyRecommendations + generateAi share one route action
+- [Iron Dojo collection tier gating](iron-dojo-collection-tier-gating.md) — collection suggestions visible in dev; lower tiers get teaser only (no names/reasons); gate display layer before writeback
