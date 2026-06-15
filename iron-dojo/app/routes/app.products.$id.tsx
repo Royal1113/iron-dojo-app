@@ -616,6 +616,13 @@ export default function ProductDetail() {
   type AiStep = "idle" | "confirming";
   const [aiStep, setAiStep] = useState<AiStep>("idle");
 
+  // M21: Recommendation feedback state
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
+  const [sessionProductContext, setSessionProductContext] = useState<string | null>(null);
+
   useEffect(() => {
     if (applyFetcher.data?.applySuccess) {
       setAiSelected(new Set());
@@ -815,10 +822,16 @@ export default function ProductDetail() {
             type="button"
             disabled={aiLoading}
             onClick={() => {
+              const promptData = buildAiPrompt(product, data.shopName ?? "");
               setAiSelected(new Set());
               setAiStep("idle");
+              setFeedbackOpen(false);
+              setFeedbackText("");
+              setFeedbackSubmitted(false);
+              setGeneratedAt(new Date());
+              setSessionProductContext(promptData.productContext);
               aiFetcher.submit(
-                { promptJson: JSON.stringify(buildAiPrompt(product, data.shopName ?? "")) },
+                { promptJson: JSON.stringify(promptData) },
                 { method: "post" },
               );
             }}
@@ -840,6 +853,22 @@ export default function ProductDetail() {
                   approve any changes before applying them.
                 </s-paragraph>
               </s-banner>
+
+              {/* M21: Session Summary */}
+              {generatedAt && (
+                <s-stack direction="inline" gap="base">
+                  <s-stack direction="block" gap="small-200">
+                    <s-text>Generated At</s-text>
+                    <s-text>{generatedAt.toLocaleString()}</s-text>
+                  </s-stack>
+                  <s-stack direction="block" gap="small-200">
+                    <s-text>Product Context</s-text>
+                    <s-badge tone="neutral">
+                      {sessionProductContext ?? "—"}
+                    </s-badge>
+                  </s-stack>
+                </s-stack>
+              )}
 
               {(
                 [
@@ -911,6 +940,59 @@ export default function ProductDetail() {
                     </s-stack>
                   ))}
                 </s-stack>
+              )}
+
+              {/* M21: Flag Recommendation */}
+              {!feedbackSubmitted ? (
+                <s-stack direction="block" gap="small-200">
+                  {!feedbackOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => setFeedbackOpen(true)}
+                    >
+                      Flag Recommendation
+                    </button>
+                  ) : (
+                    <s-stack direction="block" gap="small-200">
+                      <textarea
+                        rows={3}
+                        placeholder="What was wrong with this recommendation?"
+                        value={feedbackText}
+                        onChange={(e) => setFeedbackText(e.target.value)}
+                        style={{ width: "100%", padding: "8px", fontSize: "14px", boxSizing: "border-box" }}
+                      />
+                      <s-stack direction="inline" gap="base">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.warn("[IronDojo] AI recommendation flagged", {
+                              productId: product.id,
+                              sessionProductContext,
+                              generatedAt: generatedAt?.toISOString(),
+                              feedback: feedbackText.trim() || "(no details provided)",
+                            });
+                            setFeedbackSubmitted(true);
+                            setFeedbackOpen(false);
+                          }}
+                        >
+                          Submit Feedback
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFeedbackOpen(false)}
+                        >
+                          Cancel
+                        </button>
+                      </s-stack>
+                    </s-stack>
+                  )}
+                </s-stack>
+              ) : (
+                <s-banner tone="success">
+                  <s-paragraph>
+                    Thanks — this feedback will help us improve recommendations.
+                  </s-paragraph>
+                </s-banner>
               )}
 
               <button
